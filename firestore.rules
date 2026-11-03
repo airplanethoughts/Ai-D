@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.token.admin == true; }
+    match /JackSocialApp/{group}/Users/{uid} {
+      allow read: if group == 'All Users' && signedIn() && request.auth.uid == uid;
+      allow create: if group == 'All Users' && signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['role']) && request.resource.data.role == 'Users';
+      allow update, delete: if false;
+    }
+    match /JackSocialAppAdminPosts/{post} {
+      allow read: if signedIn();
+      allow create: if admin() && request.resource.data.postOwner == request.auth.uid
+        && request.resource.data.keys().hasOnly(['title','content','picURL','postOwner','date','likes','comments'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0
+        && request.resource.data.content is string && request.resource.data.content.size() <= 10000;
+      allow update: if admin() && resource.data.postOwner == request.auth.uid
+        && request.resource.data.postOwner == resource.data.postOwner;
+      allow delete: if admin() && resource.data.postOwner == request.auth.uid;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
