@@ -138,3 +138,13 @@ npx firebase deploy --project YOUR_PROJECT_ID --only hosting
 ```
 
 Use the returned Hosting URL. Enable Email/Password sign-in and add your live domain to Firebase Authentication’s authorized domains. Deploy the checked-in database/storage rules and the optional callable backend to the same explicitly selected project; hosting by itself does not configure those services. Set the OpenAI key only through Firebase’s secret manager. A real project sign-in, service provisioning and any required billing setup are separate account steps; the configuration check makes no claims that those are already complete.
+
+## Live web app
+
+[Open Ai-D](https://ai-d-live-20261103.web.app). This deployment uses the Spark plan: email/password accounts, private text journals and mood tracking, and written self-reflection prompts. AI responses and photo uploads are disabled. Explore shows administrator-published activities; a new project starts empty.
+
+## Hosting on the Spark plan
+
+Set `ENABLE_AI` and `ENABLE_UPLOADS` to `false` in your local build configuration when those backend services have not been provisioned. Accounts, text journals, mood tracking and written self-reflection prompts still work. The build hides image selection and AI request controls, and the AI service rejects requests without sending them. The example configuration starts with these capabilities off.
+
+Only set the flags to `true` after provisioning Storage and the callable AI backend (including its server-side secret) in your own project. The flags do not enable billing or create those services.
