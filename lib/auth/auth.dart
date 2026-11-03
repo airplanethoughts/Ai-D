@@ -59,11 +59,28 @@ class _AuthGateState extends State<AuthGate> {
         );
       }
     } on FirebaseAuthException catch (e) {
+      const messages = {
+        'weak-password': 'Choose a stronger password.',
+        'invalid-email': 'Enter a valid email address.',
+        'email-already-in-use':
+            'This email already has an account. Try signing in.',
+        'invalid-credential': 'The email or password is incorrect.',
+        'wrong-password': 'The email or password is incorrect.',
+        'user-not-found': 'The email or password is incorrect.',
+        'network-request-failed':
+            'Could not reach authentication. Check your network or emulator.',
+        'invalid-api-key':
+            'Firebase configuration is invalid. Check your public app API key.',
+        'operation-not-allowed':
+            'Email/password sign-in is not enabled in this Firebase project.',
+        'too-many-requests':
+            'Too many attempts. Please wait before trying again.',
+      };
       if (mounted) {
         setState(
-          () => _error = e.code == 'weak-password'
-              ? 'Choose a stronger password.'
-              : 'Could not sign in or create the account. Check your details and connection.',
+          () => _error =
+              messages[e.code] ??
+              'Could not sign in or create the account. Check your details and connection.',
         );
       }
     } catch (_) {
