@@ -1,0 +1,13 @@
+{
+  "USE_FIREBASE": true,
+  "USE_EMULATORS": true,
+  "EMULATOR_HOST": "127.0.0.1",
+  "FIREBASE_API_KEY": "demo-key-not-a-real-key",
+  "FIREBASE_APP_ID": "1:123456789:web:demoaid",
+  "FIREBASE_PROJECT_ID": "demo-ai-d",
+  "FIREBASE_MESSAGING_SENDER_ID": "123456789",
+  "FIREBASE_AUTH_DOMAIN": "demo-ai-d.firebaseapp.com",
+  "FIREBASE_DATABASE_URL": "https://demo-ai-d-default-rtdb.firebaseio.com",
+  "FIREBASE_STORAGE_BUCKET": "demo-ai-d.appspot.com",
+  "FUNCTIONS_REGION": "us-central1"
+}
