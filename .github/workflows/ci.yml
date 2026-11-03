@@ -15,6 +15,7 @@ jobs:
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
       - run: flutter test
+      - run: flutter test test/free_deployment_test.dart --dart-define=ENABLE_AI=false --dart-define=ENABLE_UPLOADS=false
       - run: flutter build web --no-wasm-dry-run
       - run: flutter build web --no-wasm-dry-run --dart-define-from-file=config/firebase.emulator.json
   backend-and-rules:
