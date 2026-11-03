@@ -49,7 +49,7 @@ flutter run -d chrome --dart-define-from-file=config/firebase.local.json
 
 ### Optional AI backend
 
-The Flutter client calls the authenticated Firebase callable function `aiReply`; it never contains an OpenAI API key. Journals save before AI is attempted. If the backend is absent or unavailable, your journal remains saved. Chat keeps failed messages available to retry/edit, retains ten prior conversation turns, and never duplicates a failed turn on retry. Opening the chat does not trigger a paid request. Encouragement requests run once per screen mount or explicit refresh.
+The Flutter client calls the authenticated Firebase callable function `aiReply`; it never contains an OpenAI API key. Journal AI is opt-in through a clearly labeled checkbox; journals save before AI is attempted. If the backend is absent or unavailable, your journal remains saved. Chat keeps failed messages available to retry/edit, retains ten prior conversation turns, and never duplicates a failed turn on retry. Opening the chat does not trigger a paid request. Encouragement requests run once per screen mount or explicit refresh.
 
 ```sh
 npx firebase functions:secrets:set OPENAI_API_KEY --project YOUR_PROJECT_ID
@@ -88,7 +88,7 @@ In another terminal:
 flutter run -d chrome --dart-define-from-file=config/firebase.emulator.json
 ```
 
-Create an ordinary account in the app. The emulator UI is at http://127.0.0.1:4000. Data is temporary unless you explicitly export/import emulator data. AI is unavailable in this configuration; journals still save. On an Android emulator, use `--dart-define=EMULATOR_HOST=10.0.2.2` as well. No rules or backend are deployed to a real project by these commands.
+Create an ordinary account in the app. The emulator UI is at http://127.0.0.1:4000. Use the documented debug workflow on `localhost` for emulator development. FlutterFire restores emulator authentication settings differently in debug mode; serving a release build against emulators and reloading it is not a supported workflow here. Data is temporary unless you explicitly export/import emulator data. AI is unavailable in this configuration; journals still save. On an Android emulator, use `--dart-define=EMULATOR_HOST=10.0.2.2` as well. No rules or backend are deployed to a real project by these commands.
 
 ## Verification
 
