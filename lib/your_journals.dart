@@ -1,152 +1,128 @@
-import 'dart:async';
-
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_database/ui/firebase_animated_list.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show  kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:jack_social_app_v2/form_widget.dart';
-import 'package:jack_social_app_v2/main.dart';
-import 'package:jack_social_app_v2/specific_journal.dart';
+import 'main.dart';
+import 'form_widget.dart';
+import 'specific_journal.dart';
 
 class YourJournals extends StatefulWidget {
-  const YourJournals({Key? key}) : super(key: key);
-
+  const YourJournals({super.key});
   @override
-  _YourJournalsState createState() => _YourJournalsState();
+  State<YourJournals> createState() => _YourJournalsState();
 }
 
 class _YourJournalsState extends State<YourJournals> {
-  late User user;
-  late DatabaseReference _messagesRef;
-  late StreamSubscription<DatabaseEvent> _messagesSubscription;
-  bool _anchorToBottom = true;
-  bool initialized = false;
-
-  @override
-  void initState() {
-    user = auth.currentUser!;
-    init();
-    auth.userChanges().listen((event) {
-      if (event != null && mounted) {
-        setState(() {
-          user = event;
-        });
-      }
-    });
-    super.initState();
-  }
-
-  Future<void> init() async {
-
-    final database = FirebaseDatabase.instance;
-    _messagesRef = database.ref('users/${user.uid}');
-
-    database.setLoggingEnabled(false);
-
-    if (!kIsWeb) {
-      database.setPersistenceEnabled(true);
-      database.setPersistenceCacheSizeBytes(10000000);
-    }
-
-    setState(() {
-      initialized = true;
-    });
-
-    final messagesQuery = _messagesRef.limitToLast(10);
-
-    _messagesSubscription = messagesQuery.onChildAdded.listen(
-          (DatabaseEvent event) {
-        //print('Child added: ${event.snapshot.value}');
-      },
-      onError: (Object o) {
-        final error = o as FirebaseException;
-        print('Error: ${error.code} ${error.message}');
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    _messagesSubscription.cancel();
-  }
-
-
-  Future<void> _deleteMessage(DataSnapshot snapshot) async {
-    final messageRef = _messagesRef.child(snapshot.key!);
-    final snapshotMap = snapshot.value as Map;
-    final picRef = FirebaseStorage.instance.refFromURL(snapshotMap["picURL"]);
-    await picRef.delete();
-    await messageRef.remove();
-  }
-
-  void _setAnchorToBottom(bool? value) {
-    if (value == null) {
-      return;
-    }
-
-    setState(() {
-      _anchorToBottom = value;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!initialized) return Container();
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Your Journey"),
-      ),
-      body: Column(
-        children: [
-          ListTile(
-            leading: Checkbox(
-              onChanged: _setAnchorToBottom,
-              value: _anchorToBottom,
-            ),
-            title: const Text('Anchor to bottom'),
+  late final _ref = FirebaseDatabase.instance.ref(
+    'users/${auth.currentUser!.uid}',
+  );
+  late final _stream = _ref.orderByChild('date').limitToLast(100).onValue;
+  Future<void> _delete(DataSnapshot entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this journal?'),
+        content: const Text(
+          'The entry and its uploaded image will be removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-          Flexible(
-            child: FirebaseAnimatedList(
-              key: ValueKey<bool>(_anchorToBottom),
-              query: _messagesRef,
-              reverse: _anchorToBottom,
-              itemBuilder: (context, snapshot, animation, index) {
-                final diaryList = snapshot.value! as Map;
-                int timeSkip = diaryList["date"] ;
-                final DateTime timeStamp = DateTime.fromMillisecondsSinceEpoch(timeSkip);
-                String formattedDate = DateFormat('MM-dd-yyyy').format(timeStamp);
-                return SizeTransition(
-                  sizeFactor: animation,
-                  child: Card(
-                    child: GestureDetector(
-                      onTap: () {
-                        context;
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => DayDetailScreen(info: diaryList, date: formattedDate)));
-                      },
-                      child: ListTile(
-                        leading: Image.network(diaryList["picURL"]),
-                        trailing: IconButton(
-                          onPressed: () => _deleteMessage(snapshot),
-                          icon: const Icon(Icons.delete),
-                        ),
-                        title: Text(diaryList["title_for_today"]),
-                        subtitle: Text(diaryList["mood_of_the_day"]),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
+    if (confirmed != true) return;
+    try {
+      final data = entry.value as Map;
+      final url = data['picURL'];
+      if (url is String && url.isNotEmpty) {
+        try {
+          await FirebaseStorage.instance.refFromURL(url).delete();
+        } on FirebaseException catch (e) {
+          if (e.code != 'object-not-found') rethrow;
+        }
+      }
+      await entry.ref.remove();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not finish deleting. Please retry.'),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Your Journey')),
+    floatingActionButton: FloatingActionButton(
+      tooltip: 'Write a journal',
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FormPage()),
+      ),
+      child: const Icon(Icons.add),
+    ),
+    body: StreamBuilder<DatabaseEvent>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Could not load journals. Check your connection and permissions.',
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final entries = snapshot.data!.snapshot.children
+            .toList()
+            .reversed
+            .toList();
+        if (entries.isEmpty) {
+          return const Center(child: Text('Write your first reflection.'));
+        }
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 100),
+          children: [
+            for (final entry in entries)
+              if (entry.value is Map) _tile(entry),
+          ],
+        );
+      },
+    ),
+  );
+  Widget _tile(DataSnapshot entry) {
+    final data = entry.value as Map;
+    final date = DateTime.fromMillisecondsSinceEpoch(
+      data['date'] is num ? (data['date'] as num).toInt() : 0,
+    );
+    final formatted = DateFormat.yMMMd().format(date);
+    return Card(
+      child: ListTile(
+        title: Text((data['title_for_today'] ?? 'Reflection').toString()),
+        subtitle: Text('$formatted · ${data['happiness_level'] ?? '—'}/10'),
+        trailing: IconButton(
+          tooltip: 'Delete journal',
+          onPressed: () => _delete(entry),
+          icon: const Icon(Icons.delete_outline),
+        ),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DayDetailScreen(info: data, date: formatted),
+          ),
+        ),
+      ),
+    );
   }
 }
-
-
