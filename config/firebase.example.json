@@ -7,5 +7,7 @@
   "FIREBASE_AUTH_DOMAIN": "your-project-id.firebaseapp.com",
   "FIREBASE_DATABASE_URL": "https://your-database-url-from-firebase-console",
   "FIREBASE_STORAGE_BUCKET": "your-bucket-from-firebase-console",
-  "FUNCTIONS_REGION": "us-central1"
+  "FUNCTIONS_REGION": "us-central1",
+  "ENABLE_AI": false,
+  "ENABLE_UPLOADS": false
 }
