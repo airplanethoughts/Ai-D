@@ -28,7 +28,7 @@ Open http://localhost:8080. The demo supports creating, editing, deleting and re
 
 The demo and connected modes are deliberately separate. Never use someone else's Firebase project or embed an OpenAI key in Flutter.
 
-1. Create a Firebase project you control. Register a **web app**, enable **Email/Password** in Authentication, and create Firestore, Realtime Database and Storage. Add `localhost` and your deployment domain to Authentication's authorized domains. Some Firebase services and function deployment require billing; review that in your own account.
+1. Create a Firebase project you control. Register a **web app**, enable **Email/Password** in Authentication, and create Firestore, Realtime Database and Storage. Add `localhost` and your deployment domain to Authentication's authorized domains. Cloud Storage and deployed Cloud Functions require the Blaze plan (see [Storage billing requirements](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024) and [Functions setup](https://firebase.google.com/docs/functions/get-started)). Review and configure billing in your own account before enabling those features.
 2. Copy `config/firebase.example.json` to `config/firebase.local.json`. Replace every placeholder with the web app's public Firebase configuration. Use the exact database URL and storage bucket from your console. This local file is ignored by Git. `FUNCTIONS_REGION` defaults to `us-central1`.
 3. Install Node **22**, Java **21**, and the project tooling. Deploy only to your own explicitly selected project:
 
@@ -39,7 +39,15 @@ npx firebase login
 npx firebase deploy --project YOUR_PROJECT_ID --only firestore:rules,database,storage
 ```
 
-4. Launch the connected client:
+4. Check that the release configuration targets the same project before building:
+
+```sh
+npm run check:deploy -- config/firebase.local.json YOUR_PROJECT_ID
+```
+
+The check rejects emulator settings, placeholders, mismatched projects and server secrets in client configuration. It does not deploy anything.
+
+5. Launch the connected client:
 
 ```sh
 flutter run -d chrome --dart-define-from-file=config/firebase.local.json
@@ -118,3 +126,15 @@ The tests cover local journal persistence/edit/delete, chat failure/retry/histor
 - `*.rules`, `database.rules.json`, `rules-test/`: backend authorization and emulator tests.
 
 The internal Dart package remains `jack_social_app_v2` to preserve import compatibility. Some unused historical examples remain in the repository; they do not implement nearby-event filtering.
+
+## Publish the web app with Firebase Hosting
+
+`firebase.json` now serves `build/web` with Flutter route fallback and refreshable application files. After connecting your own project and filling the local client configuration:
+
+```sh
+npm run check:deploy -- config/firebase.local.json YOUR_PROJECT_ID
+flutter build web --no-wasm-dry-run --dart-define-from-file=config/firebase.local.json
+npx firebase deploy --project YOUR_PROJECT_ID --only hosting
+```
+
+Use the returned Hosting URL. Enable Email/Password sign-in and add your live domain to Firebase Authentication’s authorized domains. Deploy the checked-in database/storage rules and the optional callable backend to the same explicitly selected project; hosting by itself does not configure those services. Set the OpenAI key only through Firebase’s secret manager. A real project sign-in, service provisioning and any required billing setup are separate account steps; the configuration check makes no claims that those are already complete.
