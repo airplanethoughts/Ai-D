@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$entry": {
+          ".validate": "newData.hasChildren(['date'])",
+          "date": {
+            ".validate": "newData.isNumber()"
+          },
+          "title_for_today": {
+            ".validate": "newData.isString() && newData.val().length <= 120"
+          },
+          "mood_of_the_day": {
+            ".validate": "newData.isString() && newData.val().length <= 2000"
+          },
+          "happiness_level": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10"
+          }
+        },
+        ".indexOn": [
+          "date"
+        ]
+      }
+    }
+  }
+}

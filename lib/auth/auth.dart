@@ -1,607 +1,183 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_signin_button/flutter_signin_button.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:jack_social_app_v2/main.dart';
+import '../main.dart';
 
-typedef OAuthSignIn = void Function();
-
-// If set to true, the app will request notification permissions to use
-// silent verification for SMS MFA instead of Recaptcha.
-const withSilentVerificationSMSMFA = true;
-
-/// Helper class to show a snackbar using the passed context.
 class ScaffoldSnackbar {
-  // ignore: public_member_api_docs
-  ScaffoldSnackbar(this._context);
-
-  /// The scaffold of current context.
-  factory ScaffoldSnackbar.of(BuildContext context) {
-    return ScaffoldSnackbar(context);
-  }
-
   final BuildContext _context;
-
-  /// Helper method to show a SnackBar.
-  void show(String message) {
-    ScaffoldMessenger.of(_context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  ScaffoldSnackbar(this._context);
+  factory ScaffoldSnackbar.of(BuildContext context) =>
+      ScaffoldSnackbar(context);
+  void show(String message) => ScaffoldMessenger.of(
+    _context,
+  ).showSnackBar(SnackBar(content: Text(message)));
 }
 
-/// The mode of the current auth session, either [AuthMode.login] or [AuthMode.register].
-// ignore: public_member_api_docs
-enum AuthMode { login, register, phone }
-
-extension on AuthMode {
-  String get label => this == AuthMode.login
-      ? 'Sign in'
-      : this == AuthMode.phone
-          ? 'Sign in'
-          : 'Register';
-}
-
-/// Entrypoint example for various sign-in flows with Firebase.
 class AuthGate extends StatefulWidget {
-  // ignore: public_member_api_docs
-  const AuthGate({Key? key}) : super(key: key);
-
+  const AuthGate({super.key});
   @override
-  State<StatefulWidget> createState() => _AuthGateState();
+  State<AuthGate> createState() => _AuthGateState();
 }
 
 class _AuthGateState extends State<AuthGate> {
-  TextEditingController emailController = TextEditingController();
-  TextEditingController passwordController = TextEditingController();
-  TextEditingController phoneController = TextEditingController();
-  TextEditingController roleController = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _form = GlobalKey<FormState>();
+  bool _register = false;
+  bool _busy = false;
+  String? _error;
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
 
-  // Initial Selected Value
-  String dropdownvalue = 'Users';
-
-  // List of items in our dropdown menu
-  var items = [
-    'Users',
-    'Admins',
-  ];
-
-  GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  String error = '';
-  String verificationId = '';
-
-  AuthMode mode = AuthMode.login;
-
-  bool isLoading = false;
-
-  void setIsLoading() {
+  Future<void> _submit() async {
+    if (_busy || !_form.currentState!.validate()) return;
     setState(() {
-      isLoading = !isLoading;
+      _busy = true;
+      _error = null;
     });
-  }
-
-  late Map<Buttons, OAuthSignIn> authButtons;
-
-  @override
-  void initState() {
-    super.initState();
-
-    if (withSilentVerificationSMSMFA && !kIsWeb) {
-      FirebaseMessaging messaging = FirebaseMessaging.instance;
-      messaging.requestPermission();
-    }
-
-    if (!kIsWeb && Platform.isMacOS) {
-      authButtons = {
-        Buttons.Apple: () => _handleMultiFactorException(
-              _signInWithApple,
-            ),
+    try {
+      if (_register) {
+        final result = await auth.createUserWithEmailAndPassword(
+          email: _email.text.trim(),
+          password: _password.text,
+        );
+        // All public registrations are ordinary users. Only the Admin SDK grants admin claims.
+        await FirebaseFirestore.instance
+            .collection('JackSocialApp')
+            .doc('All Users')
+            .collection('Users')
+            .doc(result.user!.uid)
+            .set({'role': 'Users'});
+      } else {
+        await auth.signInWithEmailAndPassword(
+          email: _email.text.trim(),
+          password: _password.text,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      const messages = {
+        'weak-password': 'Choose a stronger password.',
+        'invalid-email': 'Enter a valid email address.',
+        'email-already-in-use':
+            'This email already has an account. Try signing in.',
+        'invalid-credential': 'The email or password is incorrect.',
+        'wrong-password': 'The email or password is incorrect.',
+        'user-not-found': 'The email or password is incorrect.',
+        'network-request-failed':
+            'Could not reach authentication. Check your network or emulator.',
+        'invalid-api-key':
+            'Firebase configuration is invalid. Check your public app API key.',
+        'operation-not-allowed':
+            'Email/password sign-in is not enabled in this Firebase project.',
+        'too-many-requests':
+            'Too many attempts. Please wait before trying again.',
       };
-    } else {
-      // authButtons = {
-      //   Buttons.Google: () => _handleMultiFactorException(
-      //         _signInWithGoogle,
-      //       ),
-      // };
+      if (mounted) {
+        setState(
+          () => _error =
+              messages[e.code] ??
+              'Could not sign in or create the account. Check your details and connection.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Could not finish account setup. Please check your Firebase configuration.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reset() async {
+    if (_email.text.trim().isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await auth.sendPasswordResetEmail(email: _email.text.trim());
+      if (mounted) {
+        ScaffoldSnackbar.of(
+          context,
+        ).show('If the account exists, a reset email has been sent.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not request a reset email. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: FocusScope.of(context).unfocus,
-      child: Scaffold(
-        body: Center(
-          child: SingleChildScrollView(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: SafeArea(
-                  child: Form(
-                    key: formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 400),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Visibility(
-                            visible: error.isNotEmpty,
-                            child: MaterialBanner(
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.error,
-                              content: SelectableText(error),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      error = '';
-                                    });
-                                  },
-                                  child: const Text(
-                                    'dismiss',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                )
-                              ],
-                              contentTextStyle:
-                                  const TextStyle(color: Colors.white),
-                              padding: const EdgeInsets.all(10),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          if (mode != AuthMode.phone)
-                            Column(
-                              children: [
-                                TextFormField(
-                                  controller: emailController,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Email',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.emailAddress,
-                                  autofillHints: const [AutofillHints.email],
-                                  validator: (value) =>
-                                      value != null && value.isNotEmpty
-                                          ? null
-                                          : 'Required',
-                                ),
-                                const SizedBox(height: 20),
-                                TextFormField(
-                                  controller: passwordController,
-                                  obscureText: true,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Password',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  validator: (value) =>
-                                      value != null && value.isNotEmpty
-                                          ? null
-                                          : 'Required',
-                                ),
-                                Visibility(
-                                    visible: mode == AuthMode.login  ? false : true,
-                                    child: DropdownButton(
-                                      value: dropdownvalue,
-                                      icon: const Icon(Icons.keyboard_arrow_down),
-                                      items: items.map((String items) {
-                                        return DropdownMenuItem(
-                                          value: items,
-                                          child: Text(items),
-                                        );
-                                      }).toList(),
-                                      onChanged: (String? newValue) {
-                                        setState(() {
-                                          dropdownvalue = newValue!;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          if (mode == AuthMode.phone)
-                            TextFormField(
-                              controller: phoneController,
-                              decoration: const InputDecoration(
-                                hintText: '+12345678910',
-                                labelText: 'Phone number',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) =>
-                                  value != null && value.isNotEmpty
-                                      ? null
-                                      : 'Required',
-                            ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : () => _handleMultiFactorException(
-                                        _emailAndPassword,
-                                      ),
-                              child: isLoading
-                                  ? const CircularProgressIndicator.adaptive()
-                                  : Text(mode.label),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _resetPassword,
-                            child: const Text('Forgot password?'),
-                          ),
-                          // ...authButtons.keys
-                          //     .map(
-                          //       (button) => Padding(
-                          //         padding:
-                          //             const EdgeInsets.symmetric(vertical: 5),
-                          //         child: AnimatedSwitcher(
-                          //           duration: const Duration(milliseconds: 200),
-                          //           child: isLoading
-                          //               ? Container(
-                          //                   color: Colors.grey[200],
-                          //                   height: 50,
-                          //                   width: double.infinity,
-                          //                 )
-                          //               : SizedBox(
-                          //                   width: double.infinity,
-                          //                   height: 50,
-                          //                   child: SignInButton(
-                          //                     button,
-                          //                     onPressed: authButtons[button]!,
-                          //                   ),
-                          //                 ),
-                          //         ),
-                          //       ),
-                          //     )
-                          //     .toList(),
-                          const SizedBox(height: 20),
-                          if (mode != AuthMode.phone)
-                            RichText(
-                              text: TextSpan(
-                                style: Theme.of(context).textTheme.bodyLarge,
-                                children: [
-                                  TextSpan(
-                                    text: mode == AuthMode.login
-                                        ? "Don't have an account? "
-                                        : 'You have an account? ',
-                                  ),
-                                  TextSpan(
-                                    text: mode == AuthMode.login
-                                        ? 'Register now'
-                                        : 'Click to login',
-                                    style: const TextStyle(color: Colors.blue),
-                                    recognizer: TapGestureRecognizer()
-                                      ..onTap = () {
-                                        setState(() {
-                                          mode = mode == AuthMode.login
-                                              ? AuthMode.register
-                                              : AuthMode.login;
-                                        });
-                                      },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          const SizedBox(height: 10),
-                          // RichText(
-                          //   text: TextSpan(
-                          //     style: Theme.of(context).textTheme.bodyLarge,
-                          //     children: [
-                          //       const TextSpan(text: 'Or '),
-                          //       TextSpan(
-                          //         text: 'continue as guest',
-                          //         style: const TextStyle(color: Colors.blue),
-                          //         recognizer: TapGestureRecognizer()
-                          //           ..onTap = _anonymousAuth,
-                          //       ),
-                          //     ],
-                          //   ),
-                          // ),
-                        ],
-                      ),
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _form,
+              child: Column(
+                children: [
+                  Text(
+                    _register ? 'Create your Ai-D account' : 'Welcome to Ai-D',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 24),
+                  TextFormField(
+                    controller: _email,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    validator: (v) => v != null && v.contains('@')
+                        ? null
+                        : 'Enter an email address',
+                  ),
+                  TextFormField(
+                    controller: _password,
+                    enabled: !_busy,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                    validator: (v) => (v?.length ?? 0) >= 6
+                        ? null
+                        : 'Use at least 6 characters',
+                  ),
+                  if (_error != null) Text(_error!),
+                  if (_busy) const LinearProgressIndicator(),
+                  FilledButton(
+                    onPressed: _busy ? null : _submit,
+                    child: Text(_register ? 'Create account' : 'Sign in'),
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                            _register = !_register;
+                            _error = null;
+                          }),
+                    child: Text(
+                      _register
+                          ? 'Already have an account?'
+                          : 'Create an account',
                     ),
                   ),
-                ),
+                  TextButton(
+                    onPressed: _busy ? null : _reset,
+                    child: const Text('Reset password'),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
-    );
-  }
-
-  Future _resetPassword() async {
-    String? email;
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Send'),
-            ),
-          ],
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Enter your email'),
-              const SizedBox(height: 20),
-              TextFormField(
-                onChanged: (value) {
-                  email = value;
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (email != null) {
-      try {
-        await auth.sendPasswordResetEmail(email: email!);
-        ScaffoldSnackbar.of(context).show('Password reset email is sent');
-      } catch (e) {
-        ScaffoldSnackbar.of(context).show('Error resetting');
-      }
-    }
-  }
-
-  Future<void> _anonymousAuth() async {
-    setIsLoading();
-
-    try {
-      await auth.signInAnonymously();
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        error = '${e.message}';
-      });
-    } catch (e) {
-      setState(() {
-        error = '$e';
-      });
-    } finally {
-      setIsLoading();
-    }
-  }
-
-  Future<void> _handleMultiFactorException(
-    Future<void> Function() authFunction,
-  ) async {
-    setIsLoading();
-    try {
-      await authFunction();
-    } on FirebaseAuthMultiFactorException catch (e) {
-      setState(() {
-        error = '${e.message}';
-      });
-      final firstHint = e.resolver.hints.first;
-      if (firstHint is! PhoneMultiFactorInfo) {
-        return;
-      }
-      await auth.verifyPhoneNumber(
-        multiFactorSession: e.resolver.session,
-        multiFactorInfo: firstHint,
-        verificationCompleted: (_) {},
-        verificationFailed: print,
-        codeSent: (String verificationId, int? resendToken) async {
-          final smsCode = await getSmsCodeFromUser(context);
-
-          if (smsCode != null) {
-            // Create a PhoneAuthCredential with the code
-            final credential = PhoneAuthProvider.credential(
-              verificationId: verificationId,
-              smsCode: smsCode,
-            );
-
-            try {
-              await e.resolver.resolveSignIn(
-                PhoneMultiFactorGenerator.getAssertion(
-                  credential,
-                ),
-              );
-            } on FirebaseAuthException catch (e) {
-              print(e.message);
-            }
-          }
-        },
-        codeAutoRetrievalTimeout: print,
-      );
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        error = '${e.message}';
-      });
-    } catch (e) {
-      setState(() {
-        error = '$e';
-      });
-    }
-    setIsLoading();
-  }
-
-  Future<void> _emailAndPassword() async {
-    if (formKey.currentState?.validate() ?? false) {
-      if (mode == AuthMode.login) {
-        await auth.signInWithEmailAndPassword(
-          email: emailController.text,
-          password: passwordController.text,
-        ).then((value) {
-          FirebaseFirestore.instance.collection('JackSocialApp')
-              .doc("All Users")
-              .collection("Users")
-              .doc(value.user!.uid)
-              .get()
-              .then((value) {
-            var userType = value.data()!["role"];
-            if (userType == "Users") {
-              if (mounted) {
-                Navigator.pushReplacementNamed(context, "/Users");
-              }
-            }
-            else if (userType == "Admins") {
-              if (mounted) {
-                 Navigator.pushReplacementNamed(context, '/Admins');
-              }
-            }
-          });
-        });
-      } else if (mode == AuthMode.register) {
-        await auth.createUserWithEmailAndPassword(
-          email: emailController.text,
-          password: passwordController.text,
-        ).then((value) {
-          FirebaseFirestore.instance.collection('JackSocialApp').doc("All Users").collection("Users").doc(value.user!.uid).set(
-              {
-                'role': dropdownvalue,
-              });
-        });
-      }
-      // else {
-      //   await _phoneAuth();
-      // }
-    }
-  }
-
-  Future<void> _phoneAuth() async {
-    if (mode != AuthMode.phone) {
-      setState(() {
-        mode = AuthMode.phone;
-      });
-    } else {
-      if (kIsWeb) {
-        final confirmationResult =
-            await auth.signInWithPhoneNumber(phoneController.text);
-        final smsCode = await getSmsCodeFromUser(context);
-
-        if (smsCode != null) {
-          await confirmationResult.confirm(smsCode);
-        }
-      } else {
-        await auth.verifyPhoneNumber(
-          phoneNumber: phoneController.text,
-          verificationCompleted: (_) {},
-          verificationFailed: (e) {
-            setState(() {
-              error = '${e.message}';
-            });
-          },
-          codeSent: (String verificationId, int? resendToken) async {
-            final smsCode = await getSmsCodeFromUser(context);
-
-            if (smsCode != null) {
-              // Create a PhoneAuthCredential with the code
-              final credential = PhoneAuthProvider.credential(
-                verificationId: verificationId,
-                smsCode: smsCode,
-              );
-
-              try {
-                // Sign the user in (or link) with the credential
-                await auth.signInWithCredential(credential);
-              } on FirebaseAuthException catch (e) {
-                setState(() {
-                  error = e.message ?? '';
-                });
-              }
-            }
-          },
-          codeAutoRetrievalTimeout: (e) {
-            setState(() {
-              error = e;
-            });
-          },
-        );
-      }
-    }
-  }
-
-  Future<void> _signInWithGoogle() async {
-    // Trigger the authentication flow
-    final googleUser = await GoogleSignIn().signIn();
-
-    // Obtain the auth details from the request
-    final googleAuth = await googleUser?.authentication;
-
-    if (googleAuth != null) {
-      // Create a new credential
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      // Once signed in, return the UserCredential
-      await auth.signInWithCredential(credential);
-    }
-  }
-
-  Future<void> _signInWithApple() async {
-    final appleProvider = AppleAuthProvider();
-    appleProvider.addScope('email');
-
-    if (kIsWeb) {
-      // Once signed in, return the UserCredential
-      await auth.signInWithPopup(appleProvider);
-    } else {
-      await auth.signInWithProvider(appleProvider);
-    }
-  }
-}
-
-Future<String?> getSmsCodeFromUser(BuildContext context) async {
-  String? smsCode;
-
-  // Update the UI - wait for the user to enter the SMS code
-  await showDialog<String>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text('SMS code:'),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: const Text('Sign in'),
-          ),
-          OutlinedButton(
-            onPressed: () {
-              smsCode = null;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Cancel'),
-          ),
-        ],
-        content: Container(
-          padding: const EdgeInsets.all(20),
-          child: TextField(
-            onChanged: (value) {
-              smsCode = value;
-            },
-            textAlign: TextAlign.center,
-            autofocus: true,
-          ),
-        ),
-      );
-    },
+    ),
   );
-
-  return smsCode;
 }

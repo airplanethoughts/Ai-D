@@ -1,97 +1,120 @@
 # Ai-D
 
-A Flutter project by Guannan Du exploring journaling, mood tracking, AI conversations, and discovering activities.
+A Flutter app for journaling, personal reflection, and discovering community activities. Built by Guannan Du.
 
-Ai-D brings personal reflection and social activity into one app: write about your day, record how you feel, talk with an AI companion, and browse activities shared by administrators.
+**Start with the local demo:** it needs no account, Firebase project, API key, or paid service. Journals are saved on the current browser/device. The connected mode adds Firebase accounts, private cloud journals, administrator-published activities, and optional AI reflection through an authenticated backend.
 
-> **Project status:** An early personal project, preserved as part of my development history. The repository contains prototype features and some original scaffold code. A current end-to-end build and the connected services have not been verified.
+## Quick start — runnable demo
 
-## What's in the app
-
-| Area | Implementation |
-| --- | --- |
-| **Your Journey** | Journal entries with a daily rating, mood, written reflection, and image support. Entries can be browsed afterward. |
-| **AI companion** | A chat interface and a screen that generates short, supportive messages through an OpenAI SDK integration. |
-| **Personal check-ins** | Inputs around meals, goals, and stress. |
-| **Explore** | A Firestore-backed feed of administrator-created activities, with detail pages. |
-| **Accounts and profiles** | Firebase authentication, profile management, and separate user/admin navigation. |
-| **Admin tools** | Publish activities with a title, description, date, and uploaded image. |
-
-## Built with
-
-- **Flutter and Dart** for the interface.
-- **Firebase Authentication** for accounts.
-- **Cloud Firestore** for user roles and activity posts.
-- **Firebase Realtime Database** for journal and check-in records.
-- **Firebase Storage** for uploaded images.
-- **chat_gpt_sdk** for the existing AI integration.
-- **image_picker**, **cached_network_image**, and other Flutter packages for media and interface features.
-
-The repository includes Android and iOS projects and a web scaffold. The presence of these folders does not mean every platform has been tested.
-
-## Run locally
-
-### 1. Install the development tools
-
-Use a Flutter SDK compatible with the dependency versions in this repository. The declared Dart constraint is `>=3.0.3 <4.0.0`. Running this older project on a newer Flutter release may require dependency or platform migration.
-
-For iOS development, use macOS with Xcode and CocoaPods. For Android, configure the Android SDK and an emulator or device.
-
-### 2. Get the source and dependencies
+Tested with **Flutter 3.47.9 / Dart 3.13.7**. Use that Flutter release for reproducible results; dependency versions are committed in `pubspec.lock`.
 
 ```sh
 git clone https://github.com/airplanethoughts/Ai-D.git
 cd Ai-D
-flutter pub get
+flutter pub get --enforce-lockfile
+flutter run -d chrome
 ```
 
-### 3. Configure the services
-
-Use a Firebase project you control. Configure Firebase Authentication, Firestore, Realtime Database, and Storage to match the features you want to run.
-
-Firebase configuration lives in:
-
-- `lib/auth/firebase_options.dart`
-- `android/app/google-services.json`
-- `ios/Runner/GoogleService-Info.plist`
-
-Replace the original project configuration with your own, and review database/storage access rules. Authentication routes users according to a `role` value of `Users` or `Admins` in the Firestore user document.
-
-The AI integration is initialized in `lib/chat_page.dart`, `lib/form_widget.dart`, and `lib/users/gpt_summary.dart`. Review its credential setup and model selection before use. For a deployed app, keep service credentials on a trusted backend rather than embedding a private API key in a client build.
-
-### 4. Launch
+Alternatively, build static web files:
 
 ```sh
-flutter run
+flutter build web --no-wasm-dry-run
+python3 -m http.server 8080 --directory build/web
 ```
 
-## Code map
+Open http://localhost:8080. The demo supports creating, editing, deleting and reloading journals, mood ratings, written reflection prompts and clearly labeled sample activity ideas. It does not pretend to generate AI responses or show live events. Browser storage is not encrypted cloud backup; clearing it removes your demo data. Avoid sensitive entries on shared devices.
 
-```text
-lib/
-  main.dart                    App startup, Firebase initialization, role routing
-  auth/                        Authentication and Firebase options
-  form_widget.dart             Journal-entry form
-  your_journals.dart           Journal history
-  specific_journal.dart        Journal detail
-  little_get_to_know_screen.dart  Personal check-ins
-  chat_page.dart               AI conversation interface
-  profile.dart                 Profile and account actions
-  users/
-    home_page.dart             Main user navigation
-    gpt_summary.dart           AI-generated supportive messages
-    activity_near_me.dart      Activity feed
-    specific_activity.dart    Activity detail
-  admins/
-    home_page.dart             Admin navigation
-    pages/activities_post.dart Activity creation and image uploads
+## Connected mode — your own Firebase project
+
+The demo and connected modes are deliberately separate. Never use someone else's Firebase project or embed an OpenAI key in Flutter.
+
+1. Create a Firebase project you control. Register a **web app**, enable **Email/Password** in Authentication, and create Firestore, Realtime Database and Storage. Add `localhost` and your deployment domain to Authentication's authorized domains. Some Firebase services and function deployment require billing; review that in your own account.
+2. Copy `config/firebase.example.json` to `config/firebase.local.json`. Replace every placeholder with the web app's public Firebase configuration. Use the exact database URL and storage bucket from your console. This local file is ignored by Git. `FUNCTIONS_REGION` defaults to `us-central1`.
+3. Install Node **22**, Java **21**, and the project tooling. Deploy only to your own explicitly selected project:
+
+```sh
+npm ci
+npm ci --prefix functions
+npx firebase login
+npx firebase deploy --project YOUR_PROJECT_ID --only firestore:rules,database,storage
 ```
 
-The internal Dart package is still named `jack_social_app_v2`, and some app labels retain the original “Jack Social App” name.
+4. Launch the connected client:
 
-## Development notes
+```sh
+flutter run -d chrome --dart-define-from-file=config/firebase.local.json
+```
 
-- The checked-in widget test is still Flutter's counter-app example; it does not cover Ai-D's actual flows.
-- Existing AI calls, Firebase configuration, account-role handling, and platform behavior need verification before treating this as a production app.
-- Activity browsing currently reads administrator posts. The file name `activity_near_me.dart` should not be taken as evidence of working distance-based filtering.
+`USE_FIREBASE` must be `true` in that file. Missing Firebase configuration shows a setup error with a local-demo fallback, rather than a blank app. The checked-in original mobile Firebase registration files are historical; they are not used to initialize the web app. Configure your own mobile registration with FlutterFire before any native deployment.
 
+### Optional AI backend
+
+The Flutter client calls the authenticated Firebase callable function `aiReply`; it never contains an OpenAI API key. Journal AI is opt-in through a clearly labeled checkbox; journals save before AI is attempted. If the backend is absent or unavailable, your journal remains saved. Chat keeps failed messages available to retry/edit, retains ten prior conversation turns, and never duplicates a failed turn on retry. Opening the chat does not trigger a paid request. Encouragement requests run once per screen mount or explicit refresh.
+
+```sh
+npx firebase functions:secrets:set OPENAI_API_KEY --project YOUR_PROJECT_ID
+npx firebase deploy --project YOUR_PROJECT_ID --only functions
+```
+
+Set `OPENAI_MODEL` when the deployment tool prompts for the parameter: choose a Responses API model available in your own OpenAI project. Do not put an API key in the model field or client configuration. Review provider pricing before enabling it. See [the official Responses API documentation](https://developers.openai.com/api/docs/guides/migrate-to-responses).
+
+The server validates roles, message lengths, turn order and authentication, supplies its own instructions, sets `store: false`, reserves a quota slot transactionally before calling the provider, and limits each authenticated UID to **20 requests per UTC day**. Failed provider attempts count toward this quota. Requests time out and provider errors are sanitized. Quotas contain UID and counts, not message content. Enable a Firestore TTL policy for `_aiUsage.expiresAt` to automatically clean old counters. Provider retention policies still apply; `store: false` is not a blanket promise of zero retention. Configure App Check and abuse/billing monitoring before operating a broadly accessible paid service; per-account quotas alone do not prevent account-farming abuse.
+
+AI responses are reflection aids, not therapy, diagnosis or professional advice. Nothing in the client or tests requires a real provider key. A live paid response has not been tested as part of this change.
+
+### Administrator access
+
+Public registration always creates an ordinary user. There is no client-side "become admin" option. The `admin: true` Firebase Authentication custom claim must be granted from a trusted Admin SDK environment by the project owner. Sign out and back in afterward so the claim refreshes. Merely changing a Firestore `role` field does not grant access. The UI and rules use the claim; rules are the actual authorization boundary.
+
+- Firestore: users can create/read their own ordinary profile; only admin claims can publish activities.
+- Realtime Database: journals/check-ins are readable and writable only by their owner; date and mood values are validated.
+- Storage: private journal image paths and shared activity image paths have separate rules; images must be under 5 MB.
+- Everything else, including server quota counters, is denied to clients by default.
+
+Firebase download URLs contain bearer tokens: anyone given such a URL may access that object. Do not share private journal image URLs. Deploying these rule files is a separate, explicit step; committing them does not change the old hosted Firebase project's rules.
+
+## Run the connected data flow locally with emulators
+
+No production Firebase project or AI key is required to exercise accounts and journals locally:
+
+```sh
+npm ci
+npx firebase emulators:start --project demo-ai-d --only auth,firestore,database,storage
+```
+
+In another terminal:
+
+```sh
+flutter run -d chrome --dart-define-from-file=config/firebase.emulator.json
+```
+
+Create an ordinary account in the app. The emulator UI is at http://127.0.0.1:4000. Use the documented debug workflow on `localhost` for emulator development. FlutterFire restores emulator authentication settings differently in debug mode; serving a release build against emulators and reloading it is not a supported workflow here. Data is temporary unless you explicitly export/import emulator data. AI is unavailable in this configuration; journals still save. On an Android emulator, use `--dart-define=EMULATOR_HOST=10.0.2.2` as well. No rules or backend are deployed to a real project by these commands.
+
+## Verification
+
+```sh
+flutter analyze
+flutter test
+flutter build web --no-wasm-dry-run
+flutter build web --no-wasm-dry-run --dart-define-from-file=config/firebase.emulator.json
+npm ci
+npm ci --prefix functions
+npm test --prefix functions
+npm run test:rules
+```
+
+The tests cover local journal persistence/edit/delete, chat failure/retry/history, encouragement request lifecycle, AI input validation, quota failure behavior, sanitized provider errors, owner-only journal access, profile privilege escalation, administrator activity writes, and image access rules. GitHub Actions runs these checks with Node 22, Java 21 and the pinned Flutter release.
+
+**Verified target:** Flutter web. Android/iOS scaffolds are retained from the original project, and still require native toolchain/Firebase registration and platform migration checks. Native builds and a real cloud deployment are not claimed as tested.
+
+## Source map
+
+- `lib/demo/`: local-only runnable demo and persisted journal editor.
+- `lib/main.dart`, `lib/auth/`: explicit startup modes and account/session routing.
+- `lib/services/ai_service.dart`, `lib/chat_page.dart`: callable client and conversation UI.
+- `lib/form_widget.dart`, `lib/your_journals.dart`: connected journal creation/history.
+- `lib/users/`, `lib/admins/`: activities, encouragement and admin publishing.
+- `functions/`: authenticated, quota-limited server-side AI integration.
+- `*.rules`, `database.rules.json`, `rules-test/`: backend authorization and emulator tests.
+
+The internal Dart package remains `jack_social_app_v2` to preserve import compatibility. Some unused historical examples remain in the repository; they do not implement nearby-event filtering.

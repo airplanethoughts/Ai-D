@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Developer-specific Firebase config and server secrets
+config/firebase.local*.json
+.env
+.env.*
+!.env.example
+functions/.secret.local
+functions/node_modules/
+.firebase/
+firebase-debug.log*
+
+node_modules/

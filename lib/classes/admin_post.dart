@@ -20,19 +20,22 @@ class Posts {
   });
 
   factory Posts.fromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> snapshot,
-      SnapshotOptions? options,
-      ) {
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+    SnapshotOptions? options,
+  ) {
     final data = snapshot.data();
     return Posts(
       title: data?['title'] ?? "default",
       content: data?['content'] ?? "default",
-      picURL: data?['picURL'] ?? "https://media.springernature.com/w300/springer-static/image/art%3A10.1038%2F528190a/MediaObjects/41586_2015_Article_BF528190a_Figa_HTML.jpg",
+      picURL:
+          data?['picURL'] ??
+          "https://media.springernature.com/w300/springer-static/image/art%3A10.1038%2F528190a/MediaObjects/41586_2015_Article_BF528190a_Figa_HTML.jpg",
       postOwner: data?['postOwner'] ?? "default",
       date: data?['date'] ?? 1699579139,
       likes: data?['likes'] ?? 0,
-      comments:
-      data?['comments'] is Iterable ? List.from(data?['comments']) : null,
+      comments: data?['comments'] is Iterable
+          ? List.from(data?['comments'])
+          : null,
     );
   }
 

@@ -1,441 +1,191 @@
-import 'dart:async';
-import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:typed_data';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:intl/intl.dart' as intl;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:jack_social_app_v2/api_key.dart';
-import 'package:jack_social_app_v2/auth/auth.dart';
-import 'package:jack_social_app_v2/main.dart';
-import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
+import 'main.dart';
+import 'services/ai_service.dart';
 
 class FormPage extends StatefulWidget {
   const FormPage({super.key});
-
   @override
   State<FormPage> createState() => _FormPageState();
 }
 
 class _FormPageState extends State<FormPage> {
-
-  bool userInteracts() => imageFile != null;
-  final database = FirebaseDatabase.instance.ref();
-  final storageRef = FirebaseStorage.instance.ref();
-
-
-  late User user;
-  late TextEditingController controller;
-  final phoneController = TextEditingController();
-
-  String? photoURL;
-
-  bool showSaveButton = false;
-  bool isLoading = false;
-
-  final _formKey = GlobalKey<FormState>();
-  String title = '';
-  String description = '';
-  DateTime date = DateTime.now();
-  double maxValue = 0;
-  bool? brushedTeeth = false;
-  bool enableFeature = false;
-  XFile? imageFile;
-  late final OpenAI _openAI;
-
+  final _form = GlobalKey<FormState>();
+  final _title = TextEditingController(), _body = TextEditingController();
+  Uint8List? _image;
+  double _mood = 5;
+  bool _busy = false, _requestAi = false;
+  String? _error;
   @override
   void dispose() {
-    descriptionController.dispose();
+    _title.dispose();
+    _body.dispose();
     super.dispose();
   }
 
-  @override
-  void initState() {
-    user = auth.currentUser!;
-
-    _openAI = OpenAI.instance.build(
-      token: ApiKey.openAIApiKey,
-      baseOption: HttpSetup(
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-    );
-
-
-    auth.userChanges().listen((event) {
-      if (event != null && mounted) {
-        setState(() {
-          user = event;
-        });
-      }
-    });
-
-    super.initState();
-  }
-  TextEditingController descriptionController = TextEditingController();
-
-  Future updateYourDay() async {
-    // ignore: use_build_context_synchronously
-    ScaffoldSnackbar.of(context).show('Your Day has been updated');
-  }
-
-  void getImage(ImageSource source) async {
+  Future<void> _pick() async {
     try {
-      final pickedImage = await ImagePicker().pickImage(source: source);
-      if (pickedImage != null) {
-        //textScanning = true;
-        imageFile = pickedImage;
-        //getRecognisedText(pickedImage);
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (bytes.length >= 5 * 1024 * 1024) throw StateError('Image too large');
+      if (mounted) {
         setState(() {
-
+          _image = bytes;
+          _error = null;
         });
       }
-    } catch (e) {
-      //textScanning = false;
-      imageFile = null;
-      //scannedText = "Error occured while scanning";
-      setState(() {});
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Choose an image smaller than 5 MB.');
+      }
     }
   }
 
-  Future<String> uploadTodaysPics(String key) async {
-    String drugPicUrl = "";
-    final drugUrl = storageRef.child("JackSocialApp/Users/${user.uid}/$key-$title.jpg");
-    UploadTask uploaddrug = drugUrl.putFile(File(imageFile!.path));
-    await uploaddrug.whenComplete(() async => {
-      print("love: ${drugUrl.getDownloadURL()}"),
-      drugPicUrl = await drugUrl.getDownloadURL(),
+  Future<void> _save() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
     });
-    return drugPicUrl.toString();
-  }
-
-  Future<String> _handleSubmit(String text) async {
-    // Handle ChatGPT request and response
-    final request = ChatCompleteText(
-      messages: [
-        Messages(
-          role: Role.assistant,
-          content: "You are a friend of the user, and the user is trying to ask for your advice, be nice to them and be positive for them to feel like hearing from a real friend. ",
+    bool saved = false;
+    Reference? upload;
+    try {
+      final uid = auth.currentUser!.uid;
+      final entry = FirebaseDatabase.instance.ref('users/$uid').push();
+      String picURL = '';
+      if (_image != null) {
+        upload = FirebaseStorage.instance.ref(
+          'JackSocialApp/Users/$uid/${entry.key}.jpg',
+        );
+        await upload.putData(
+          _image!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        picURL = await upload.getDownloadURL();
+      }
+      await entry.set({
+        'date': DateTime.now().millisecondsSinceEpoch,
+        'title_for_today': _title.text.trim(),
+        'mood_of_the_day': _body.text.trim(),
+        'happiness_level': _mood,
+        'picURL': picURL,
+        'AI_response': '',
+      });
+      saved = true;
+      bool aiSucceeded = false;
+      if (_requestAi) {
+        try {
+          final reply = await AiService().reply([
+            {'role': 'user', 'content': _body.text.trim()},
+          ], mode: 'journal');
+          await entry.child('AI_response').set(reply);
+          aiSucceeded = true;
+        } catch (_) {
+          /* The journal is already saved; AI is optional. */
+        }
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _requestAi && !aiSucceeded
+                ? 'Journal saved. AI reflection is unavailable right now.'
+                : 'Journal saved.',
+          ),
         ),
-        Messages(
-          role: Role.user,
-          content: text,
-        )
-      ],
-      maxToken: 200,
-      model: GptTurbo0631Model(),
-    );
-    final response = await _openAI.onChatCompletion(request: request);
-    print(response);
-    return response!.choices.first.message!.content.trim().replaceAll('"', '');
+      );
+      Navigator.pop(context);
+    } catch (_) {
+      if (!saved && upload != null) {
+        try {
+          await upload.delete();
+        } catch (_) {
+          /* Retryable orphan cleanup. */
+        }
+      }
+      if (mounted) {
+        setState(
+          () =>
+              _error = 'Could not save. Your text is still here; please retry.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final todayDrugRef = database.child("/users/${user.uid}");
-    final drugListRef = database.child("/users/${user.uid}");
-    var key = database.push().key;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Stories of your day"),
-      ),
-      body: SingleChildScrollView(
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Write a journal')),
+    body: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _form,
         child: Column(
           children: [
-            Form(
-              key: _formKey,
-              child: Scrollbar(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Card(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 400),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            ...[
-                              TextFormField(
-                                decoration: const InputDecoration(
-                                  filled: true,
-                                  hintText: 'Reason...',
-                                  labelText: 'Rate today /10',
-                                ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    title = value;
-                                  });
-                                },
-                              ),
-                              TextFormField(
-                                //controller: descriptionController,
-                                decoration: InputDecoration(
-                                  border: const OutlineInputBorder(),
-                                  filled: true,
-                                  hintText:
-                                  'Write anything that happened today in 200 words...',
-                                  labelText: 'Mood for the day',
-                                  counterText:
-                                  "Word count: ${200 - description.length} ",
-                                  // counter:
-                                  //     Text("${descriptionController.text.length}"),
-                                ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    description = value;
-                                  });
-                                },
-                                maxLines: 5,
-                                maxLength: 200,
-                              ),
-                              _FormDatePicker(
-                                date: date,
-                                onChanged: (value) {
-                                  setState(() {
-                                    date = value;
-                                  });
-                                },
-                              ),
-                              Center(
-                                child: SingleChildScrollView(
-                                  child: Container(
-                                      margin: const EdgeInsets.all(20),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.center,
-                                        children: [
-                                          //if (textScanning) const CircularProgressIndicator(),
-                                          if (imageFile == null) //!textScanning &&
-                                            Container(
-                                              width: 300,
-                                              height: 300,
-                                              color: Colors.grey[300]!,
-                                            ),
-                                          if (imageFile != null) Image.file(File(imageFile!.path)),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Container(
-                                                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                                                  padding: const EdgeInsets.only(top: 10),
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.white,
-                                                      foregroundColor: Colors.grey,
-                                                      shadowColor: Colors.grey[400],
-                                                      elevation: 10,
-                                                      shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(8.0)),
-                                                    ),
-                                                    onPressed: () {
-                                                      getImage(ImageSource.gallery);
-                                                    },
-                                                    child: Container(
-                                                      margin: const EdgeInsets.symmetric(
-                                                          vertical: 5, horizontal: 5),
-                                                      child: Column(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.image,
-                                                            size: 30,
-                                                          ),
-                                                          Text(
-                                                            "Gallery",
-                                                            style: TextStyle(
-                                                                fontSize: 13, color: Colors.grey[600]),
-                                                          )
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  )),
-                                              Container(
-                                                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                                                  padding: const EdgeInsets.only(top: 10),
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.white,
-                                                      foregroundColor: Colors.grey,
-                                                      shadowColor: Colors.grey[400],
-                                                      elevation: 10,
-                                                      shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(8.0)),
-                                                    ),
-                                                    onPressed: () {
-                                                      getImage(ImageSource.camera);
-                                                    },
-                                                    child: Container(
-                                                      margin: const EdgeInsets.symmetric(
-                                                          vertical: 5, horizontal: 5),
-                                                      child: Column(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.camera_alt,
-                                                            size: 30,
-                                                          ),
-                                                          Text(
-                                                            "Camera",
-                                                            style: TextStyle(
-                                                                fontSize: 13, color: Colors.grey[600]),
-                                                          )
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  )),
-                                            ],
-                                          ),
-                                          const SizedBox(
-                                            height: 20,
-                                          ),
-                                          const SizedBox(
-                                            height: 20,
-                                          ),
-                                        ],
-                                      )),
-                                ),
-                              ),
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Happiness Level',
-                                        style: Theme.of(context).textTheme.bodyLarge,
-                                      ),
-                                    ],
-                                  ),
-                                  Text(
-                                    intl.NumberFormat.currency(
-                                        symbol: "\$", decimalDigits: 0)
-                                        .format(maxValue),
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  Slider(
-                                    min: 0,
-                                    max: 10,
-                                    divisions: 10,
-                                    value: maxValue,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        maxValue = value;
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ].expand(
-                                  (widget) => [
-                                widget,
-                                const SizedBox(
-                                  height: 24,
-                                )
-                              ],
-                            )
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+            TextFormField(
+              controller: _title,
+              enabled: !_busy,
+              maxLength: 120,
+              decoration: const InputDecoration(labelText: 'Title'),
+              validator: (v) => (v ?? '').trim().isEmpty ? 'Add a title' : null,
+            ),
+            TextFormField(
+              controller: _body,
+              enabled: !_busy,
+              maxLength: 2000,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                labelText: 'What happened today?',
+              ),
+              validator: (v) =>
+                  (v ?? '').trim().isEmpty ? 'Write a reflection' : null,
+            ),
+            Text('How did today feel? ${_mood.round()}/10'),
+            Slider(
+              value: _mood,
+              min: 0,
+              max: 10,
+              divisions: 10,
+              label: '${_mood.round()}/10',
+              onChanged: _busy ? null : (v) => setState(() => _mood = v),
+            ),
+            if (_image != null) Image.memory(_image!, height: 180),
+            TextButton(
+              onPressed: _busy ? null : _pick,
+              child: const Text('Choose optional image'),
+            ),
+            if (_image != null)
+              TextButton(
+                onPressed: _busy ? null : () => setState(() => _image = null),
+                child: const Text('Remove image'),
+              ),
+            CheckboxListTile(
+              value: _requestAi,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() => _requestAi = v ?? false),
+              title: const Text('Request an AI reflection'),
+              subtitle: const Text(
+                'Sends this reflection to your configured AI server and provider. Your journal saves first.',
               ),
             ),
-            ElevatedButton(
-              onPressed: !userInteracts() ? null : () async {
-                showDialog(
-                    context: context,
-                    builder: (context) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    });
-                final drugInput = <String, dynamic>{
-                  "date": date.millisecondsSinceEpoch,
-                  "title_for_today": title,
-                  "mood_of_the_day": description,
-                  "happiness_level": maxValue,
-                  "picURL": await uploadTodaysPics(key!),
-                  "AI_response": await _handleSubmit(description),
-                };
-                final drugListInput = <String, dynamic> {
-                  title: true,
-                };
-                todayDrugRef
-                    .child(key)
-                    .set(drugInput)
-                    .then((_) => print('Diary has been posted'))
-                    .catchError((error) => print("You got error on $error"));
-                updateYourDay();
-                if (context.mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              },
-              child: const Text("Update your Diary Now!"),
+            if (_error != null) Text(_error!),
+            if (_busy) const LinearProgressIndicator(),
+            FilledButton(
+              onPressed: _busy ? null : _save,
+              child: const Text('Save journal'),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _FormDatePicker extends StatefulWidget {
-  final DateTime date;
-  final ValueChanged<DateTime> onChanged;
-
-  const _FormDatePicker({
-    required this.date,
-    required this.onChanged,
-  });
-
-  @override
-  State<_FormDatePicker> createState() => _FormDatePickerState();
-}
-
-class _FormDatePickerState extends State<_FormDatePicker> {
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            Text(
-              'Date',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            Text(
-              intl.DateFormat.yMd().format(widget.date),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ],
-        ),
-        TextButton(
-          child: const Text('Edit'),
-          onPressed: () async {
-            var newDate = await showDatePicker(
-              context: context,
-              initialDate: widget.date,
-              firstDate: DateTime(1900),
-              lastDate: DateTime(2100),
-            );
-
-            // Don't change the date if the date picker returns null.
-            if (newDate == null) {
-              return;
-            }
-
-            widget.onChanged(newDate);
-          },
-        )
-      ],
-    );
-  }
+    ),
+  );
 }
