@@ -1,5 +1,14 @@
 {
-  "name":"ai-d-rule-tests", "private":true,
-  "scripts":{"test:rules":"firebase emulators:exec --project demo-ai-d --only firestore,database,storage \"node --test rules-test/*.test.cjs\""},
-  "devDependencies":{"@firebase/rules-unit-testing":"^4.0.0","firebase":"^11.0.0","firebase-tools":"^14.0.0"}
+  "name": "ai-d-rule-tests",
+  "private": true,
+  "scripts": {
+    "test:rules": "firebase emulators:exec --project demo-ai-d --only firestore,database,storage \"node --test rules-test/*.test.cjs\"",
+    "check:deploy": "node scripts/check-deploy.cjs",
+    "test:deploy": "node --test test-deploy/*.test.cjs"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^15.34.2"
+  }
 }

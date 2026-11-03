@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import '../deployment_features.dart';
 
 class AiServiceException implements Exception {
   final String message;
@@ -64,6 +65,11 @@ class AiService {
     List<Map<String, String>> messages, {
     String mode = 'chat',
   }) async {
+    if (!DeploymentFeatures.aiEnabled) {
+      throw const AiServiceException(
+        'AI is not enabled in this deployment. You can still write journals and use self-reflection prompts.',
+      );
+    }
     if (messages.isEmpty ||
         messages.length > 21 ||
         messages.last['role'] != 'user') {

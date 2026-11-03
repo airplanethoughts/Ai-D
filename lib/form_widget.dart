@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'main.dart';
 import 'services/ai_service.dart';
+import 'deployment_features.dart';
 
 class FormPage extends StatefulWidget {
   const FormPage({super.key});
@@ -27,6 +28,7 @@ class _FormPageState extends State<FormPage> {
   }
 
   Future<void> _pick() async {
+    if (!DeploymentFeatures.uploadsEnabled) return;
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -60,7 +62,7 @@ class _FormPageState extends State<FormPage> {
       final uid = auth.currentUser!.uid;
       final entry = FirebaseDatabase.instance.ref('users/$uid').push();
       String picURL = '';
-      if (_image != null) {
+      if (DeploymentFeatures.uploadsEnabled && _image != null) {
         upload = FirebaseStorage.instance.ref(
           'JackSocialApp/Users/$uid/${entry.key}.jpg',
         );
@@ -80,7 +82,7 @@ class _FormPageState extends State<FormPage> {
       });
       saved = true;
       bool aiSucceeded = false;
-      if (_requestAi) {
+      if (DeploymentFeatures.aiEnabled && _requestAi) {
         try {
           final reply = await AiService().reply([
             {'role': 'user', 'content': _body.text.trim()},
@@ -158,25 +160,31 @@ class _FormPageState extends State<FormPage> {
               onChanged: _busy ? null : (v) => setState(() => _mood = v),
             ),
             if (_image != null) Image.memory(_image!, height: 180),
-            TextButton(
-              onPressed: _busy ? null : _pick,
-              child: const Text('Choose optional image'),
-            ),
+            if (DeploymentFeatures.uploadsEnabled)
+              TextButton(
+                onPressed: _busy ? null : _pick,
+                child: const Text('Choose optional image'),
+              ),
             if (_image != null)
               TextButton(
                 onPressed: _busy ? null : () => setState(() => _image = null),
                 child: const Text('Remove image'),
               ),
-            CheckboxListTile(
-              value: _requestAi,
-              onChanged: _busy
-                  ? null
-                  : (v) => setState(() => _requestAi = v ?? false),
-              title: const Text('Request an AI reflection'),
-              subtitle: const Text(
-                'Sends this reflection to your configured AI server and provider. Your journal saves first.',
+            if (!DeploymentFeatures.uploadsEnabled)
+              const Text(
+                'Photo uploads are not enabled in this deployment. Your text journal saves normally.',
               ),
-            ),
+            if (DeploymentFeatures.aiEnabled)
+              CheckboxListTile(
+                value: _requestAi,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _requestAi = v ?? false),
+                title: const Text('Request an AI reflection'),
+                subtitle: const Text(
+                  'Sends this reflection to your configured AI server and provider. Your journal saves first.',
+                ),
+              ),
             if (_error != null) Text(_error!),
             if (_busy) const LinearProgressIndicator(),
             FilledButton(

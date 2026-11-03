@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../main.dart';
+import '../../deployment_features.dart';
 
 class AdminActivitiesPostPage extends StatefulWidget {
   const AdminActivitiesPostPage({super.key});
@@ -26,6 +27,7 @@ class _AdminActivitiesPostPageState extends State<AdminActivitiesPostPage> {
   }
 
   Future<void> _pick() async {
+    if (!DeploymentFeatures.uploadsEnabled) return;
     try {
       final image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -59,7 +61,7 @@ class _AdminActivitiesPostPageState extends State<AdminActivitiesPostPage> {
           .collection('JackSocialAppAdminPosts')
           .doc();
       String url = '';
-      if (_image != null) {
+      if (DeploymentFeatures.uploadsEnabled && _image != null) {
         final file = FirebaseStorage.instance.ref(
           'activities/$uid/${ref.id}.jpg',
         );
@@ -122,10 +124,11 @@ class _AdminActivitiesPostPageState extends State<AdminActivitiesPostPage> {
                   (v ?? '').trim().isEmpty ? 'Add a description' : null,
             ),
             if (_image != null) Image.memory(_image!, height: 180),
-            TextButton(
-              onPressed: _busy ? null : _pick,
-              child: const Text('Choose optional image'),
-            ),
+            if (DeploymentFeatures.uploadsEnabled)
+              TextButton(
+                onPressed: _busy ? null : _pick,
+                child: const Text('Choose optional image'),
+              ),
             FilledButton(
               onPressed: _busy ? null : _publish,
               child: const Text('Publish activity'),
