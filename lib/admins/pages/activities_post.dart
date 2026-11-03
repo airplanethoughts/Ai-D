@@ -1,341 +1,140 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart' as intl;
-import 'package:jack_social_app_v2/auth/auth.dart';
-import 'package:jack_social_app_v2/classes/admin_post.dart';
-import 'package:jack_social_app_v2/main.dart';
-import 'package:path_provider/path_provider.dart';
+import '../../main.dart';
 
 class AdminActivitiesPostPage extends StatefulWidget {
   const AdminActivitiesPostPage({super.key});
-
   @override
-  State<AdminActivitiesPostPage> createState() => _AdminActivitiesPostPageState();
+  State<AdminActivitiesPostPage> createState() =>
+      _AdminActivitiesPostPageState();
 }
 
 class _AdminActivitiesPostPageState extends State<AdminActivitiesPostPage> {
-  final storageRef = FirebaseStorage.instance.ref();
-  late final DocumentReference<Posts> postRef;
-  final _formKey = GlobalKey<FormState>();
-  String title = '';
-  String description = '';
-  DateTime date = DateTime.now();
-  double maxValue = 0;
-
-  late User user;
-  late TextEditingController controller;
-  final phoneController = TextEditingController();
-
-  String? photoURL;
-
-  bool showSaveButton = false;
-  bool isLoading = false;
-
-  final ImagePicker _picker = ImagePicker();
-  File? _image;
-  late File love;
-
-
+  final _form = GlobalKey<FormState>();
+  final _title = TextEditingController(), _body = TextEditingController();
+  Uint8List? _image;
+  bool _busy = false;
+  String? _status;
   @override
-  void initState() {
-    user = auth.currentUser!;
-    super.initState();
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    super.dispose();
   }
 
-
-  _imgFromCamera() async {
-    final image =
-    await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
-
-    setState(() {
-      _image = File(image!.path);
-    });
-  }
-
-  _imgFromGallery() async {
-    final image =
-    await _picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
-
-    setState(() {
-      _image = File(image!.path);
-    });
-  }
-
-  void _showPicker() {
-    showModalBottomSheet(
-        context: context,
-        builder: (BuildContext bc) {
-          return SafeArea(
-            child: Wrap(
-              children: <Widget>[
-                ListTile(
-                    leading: const Icon(Icons.photo_library),
-                    title: const Text('Photo Library'),
-                    onTap: () {
-                      _imgFromGallery();
-                      Navigator.of(context).pop();
-                    }),
-                ListTile(
-                  leading: const Icon(Icons.photo_camera),
-                  title: const Text('Camera'),
-                  onTap: () {
-                    _imgFromCamera();
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            ),
-          );
+  Future<void> _pick() async {
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (bytes.length >= 5 * 1024 * 1024) throw StateError('Image too large');
+      if (mounted) {
+        setState(() {
+          _image = bytes;
+          _status = null;
         });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _status = 'Choose an image smaller than 5 MB.');
+      }
+    }
   }
 
-  Future<void> _showMyDialog() async {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false, // user must tap button!
-      builder: (BuildContext context) {
-        return AlertDialog(
-          content: const SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text("Do you want to change the current image?")
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Yes'),
-              onPressed: () {
-                _image = null;
-                Navigator.of(context).pop();
-                _showPicker();
-              },
-            ),
-            TextButton(
-              child: const Text('No'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Padding buildImageContainer() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12.0),
-      child: Container(
-        child: _image == null
-            ? Column(
-          children: [
-            IconButton(
-              icon: const Icon(
-                Icons.camera_alt_outlined,
-              ),
-              iconSize: 40,
-              onPressed: () {
-                _showPicker();
-              },
-            ),
-            const Text('Input your amazing volunteer activity here!'),
-          ],
-        )
-            : Stack(children: [
-          Image.file(
-            File(_image!.path),
-          ),
-          Positioned(
-              top: 5,
-              right: 0, //give the values according to your requirement
-              child: MaterialButton(
-                onPressed: () {
-                  _showMyDialog();
-                },
-                color: const Color.fromRGBO(243, 222, 186, 1),
-                // padding: EdgeInsets.all(16),
-                shape: const CircleBorder(),
-                child: const Icon(
-                  Icons.edit,
-                  size: 24,
-                ),
-              ))
-        ]),
-      ),
-    );
-  }
-
-  Future<String> uploadProblemPics() async {
-    String problemPicUrl = "";
-    final problemUrl = storageRef.child("JackSocialApp/Users/${user.uid}/${date.year}-${date.month}-${date.day}-${_formKey.toString()}.jpg");
-    UploadTask uploadProblemPic = problemUrl.putFile(_image!);
-    await uploadProblemPic.whenComplete(() async => {
-      print("love: ${problemUrl.getDownloadURL()}"),
-      problemPicUrl = await problemUrl.getDownloadURL(),
+  Future<void> _publish() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _status = null;
     });
-    return problemPicUrl.toString();
-  }
-
-  Future updateYourDay() async {
-    // ignore: use_build_context_synchronously
-    ScaffoldSnackbar.of(context).show('Your Activity has been updated');
+    try {
+      final uid = auth.currentUser!.uid;
+      final ref = FirebaseFirestore.instance
+          .collection('JackSocialAppAdminPosts')
+          .doc();
+      String url = '';
+      if (_image != null) {
+        final file = FirebaseStorage.instance.ref(
+          'activities/$uid/${ref.id}.jpg',
+        );
+        await file.putData(
+          _image!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        url = await file.getDownloadURL();
+      }
+      await ref.set({
+        'title': _title.text.trim(),
+        'content': _body.text.trim(),
+        'picURL': url,
+        'postOwner': uid,
+        'date': DateTime.now().millisecondsSinceEpoch,
+        'likes': 0,
+        'comments': <String>[],
+      });
+      if (mounted) {
+        setState(() {
+          _status = 'Activity published.';
+          _title.clear();
+          _body.clear();
+          _image = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _status =
+              'Could not publish. Check your connection and administrator permissions.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upload Your Activity - Admins'),
-      ),
-      body: Form(
-        key: _formKey,
-        child: Scrollbar(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Card(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      ...[
-                        _FormDatePicker(
-                          date: date,
-                        ),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextFormField(
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                filled: true,
-                                hintText: 'Enter the Post Title',
-                                labelText: 'Title',
-                              ),
-                              onChanged: (value) {
-                                title = value;
-                              },
-                              maxLines: 1,
-                            ),
-                          ],
-                        ),
-                        buildImageContainer(),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextFormField(
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                filled: true,
-                                hintText: 'Enter the information',
-                                labelText: 'Information',
-                              ),
-                              onChanged: (value) {
-                                description = value;
-                              },
-                              maxLines: 5,
-                            ),
-                          ],
-                        ),
-                        ElevatedButton(
-                            onPressed: () async {
-                              showDialog(
-                                  context: context,
-                                  builder: (context) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  });
-                              final post = Posts(
-                                title: title,
-                                content: description,
-                                picURL: await uploadProblemPics(),
-                                postOwner: user.uid,
-                                date: date.millisecondsSinceEpoch,
-                                likes: 0,
-                                comments: [],
-                              );
-                              final docRef = FirebaseFirestore
-                                  .instance
-                                  .collection("JackSocialAppAdminPosts")
-                                  .withConverter(
-                                fromFirestore: Posts.fromFirestore,
-                                toFirestore: (Posts post, options) => post.toFirestore(),
-                              );
-                              await docRef.add(post);
-                              if(mounted) {
-                                ScaffoldSnackbar.of(context).show('Updated activities');
-                                Navigator.pop(context);
-                              }
-                            },
-                            child: const Text('Upload your Activities')
-                        )
-                      ].expand(
-                            (widget) => [
-                          widget,
-                          const SizedBox(
-                            height: 24,
-                          )
-                        ],
-                      )
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FormDatePicker extends StatefulWidget {
-  final DateTime date;
-  //final ValueChanged<DateTime> onChanged;
-
-  const _FormDatePicker({
-    required this.date,
-    //required this.onChanged,
-  });
-
-  @override
-  State<_FormDatePicker> createState() => _FormDatePickerState();
-}
-
-class _FormDatePickerState extends State<_FormDatePicker> {
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Publish an activity')),
+    body: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _form,
+        child: Column(
           children: [
-            Text(
-              'Date',
-              style: Theme.of(context).textTheme.bodyLarge,
+            TextFormField(
+              controller: _title,
+              maxLength: 120,
+              decoration: const InputDecoration(labelText: 'Activity title'),
+              validator: (v) => (v ?? '').trim().isEmpty ? 'Add a title' : null,
             ),
-            Text(
-              intl.DateFormat.yMd().format(widget.date),
-              style: Theme.of(context).textTheme.titleMedium,
+            TextFormField(
+              controller: _body,
+              maxLines: 5,
+              maxLength: 2000,
+              decoration: const InputDecoration(labelText: 'Description'),
+              validator: (v) =>
+                  (v ?? '').trim().isEmpty ? 'Add a description' : null,
             ),
+            if (_image != null) Image.memory(_image!, height: 180),
+            TextButton(
+              onPressed: _busy ? null : _pick,
+              child: const Text('Choose optional image'),
+            ),
+            FilledButton(
+              onPressed: _busy ? null : _publish,
+              child: const Text('Publish activity'),
+            ),
+            if (_busy) const LinearProgressIndicator(),
+            if (_status != null) Text(_status!),
           ],
         ),
-      ],
-    );
-  }
+      ),
+    ),
+  );
 }
