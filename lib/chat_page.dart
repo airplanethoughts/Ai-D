@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/ai_service.dart';
+import 'deployment_features.dart';
 
 class ChatPage extends StatefulWidget {
   final String character;
@@ -73,81 +74,95 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('AI companion')),
-    body: Column(
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(12),
-          child: Text(
-            'An AI reflection companion, not a therapist. Messages are sent to your configured server and AI provider. Recent conversation history is included.',
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
+    body: !DeploymentFeatures.aiEnabled
+        ? const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'AI chat is not enabled in this deployment. You can still write journals, track your mood, and use the self-reflection prompts in Reflect.',
+            ),
+          )
+        : Column(
             children: [
-              if (_history.isEmpty)
-                const Text('What would you like to reflect on today?'),
-              for (final message in _history)
-                ListTile(
-                  title: Text(message['role'] == 'user' ? 'You' : 'Assistant'),
-                  subtitle: SelectableText(message['content']!),
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                  'An AI reflection companion, not a therapist. Messages are sent to your configured server and AI provider. Recent conversation history is included.',
                 ),
-              if (_pending != null)
-                ListTile(title: const Text('You'), subtitle: Text(_pending!)),
-            ],
-          ),
-        ),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Text(_error!),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    TextButton(
-                      onPressed: _busy ? null : () => _send(),
-                      child: const Text('Retry'),
+                    if (_history.isEmpty)
+                      const Text('What would you like to reflect on today?'),
+                    for (final message in _history)
+                      ListTile(
+                        title: Text(
+                          message['role'] == 'user' ? 'You' : 'Assistant',
+                        ),
+                        subtitle: SelectableText(message['content']!),
+                      ),
+                    if (_pending != null)
+                      ListTile(
+                        title: const Text('You'),
+                        subtitle: Text(_pending!),
+                      ),
+                  ],
+                ),
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Text(_error!),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: _busy ? null : () => _send(),
+                            child: const Text('Retry'),
+                          ),
+                          TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => setState(() {
+                                    _controller.text = _pending ?? '';
+                                    _pending = null;
+                                    _error = null;
+                                  }),
+                            child: const Text('Edit message'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              if (_busy) const LinearProgressIndicator(),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        enabled: !_busy && _pending == null,
+                        maxLength: 2000,
+                        decoration: const InputDecoration(labelText: 'Message'),
+                        onSubmitted: _send,
+                      ),
                     ),
-                    TextButton(
-                      onPressed: _busy
+                    IconButton(
+                      tooltip: 'Send message',
+                      onPressed: _busy || _pending != null
                           ? null
-                          : () => setState(() {
-                              _controller.text = _pending ?? '';
-                              _pending = null;
-                              _error = null;
-                            }),
-                      child: const Text('Edit message'),
+                          : () => _send(),
+                      icon: const Icon(Icons.send),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-        if (_busy) const LinearProgressIndicator(),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  enabled: !_busy && _pending == null,
-                  maxLength: 2000,
-                  decoration: const InputDecoration(labelText: 'Message'),
-                  onSubmitted: _send,
-                ),
-              ),
-              IconButton(
-                tooltip: 'Send message',
-                onPressed: _busy || _pending != null ? null : () => _send(),
-                icon: const Icon(Icons.send),
               ),
             ],
           ),
-        ),
-      ],
-    ),
   );
 }
