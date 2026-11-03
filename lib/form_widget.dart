@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:jack_social_app_v2/api_key.dart';
+import 'services/ai_service.dart';
 import 'package:jack_social_app_v2/auth/auth.dart';
 import 'package:jack_social_app_v2/main.dart';
-import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
 
 class FormPage extends StatefulWidget {
   const FormPage({super.key});
@@ -19,11 +19,10 @@ class FormPage extends StatefulWidget {
 }
 
 class _FormPageState extends State<FormPage> {
-
-  bool userInteracts() => imageFile != null;
+  bool userInteracts() =>
+      title.trim().isNotEmpty && description.trim().isNotEmpty && !isLoading;
   final database = FirebaseDatabase.instance.ref();
   final storageRef = FirebaseStorage.instance.ref();
-
 
   late User user;
   late TextEditingController controller;
@@ -42,10 +41,13 @@ class _FormPageState extends State<FormPage> {
   bool? brushedTeeth = false;
   bool enableFeature = false;
   XFile? imageFile;
-  late final OpenAI _openAI;
+  final AiService _aiService = AiService();
+  StreamSubscription<User?>? _authSubscription;
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
+    phoneController.dispose();
     descriptionController.dispose();
     super.dispose();
   }
@@ -54,15 +56,7 @@ class _FormPageState extends State<FormPage> {
   void initState() {
     user = auth.currentUser!;
 
-    _openAI = OpenAI.instance.build(
-      token: ApiKey.openAIApiKey,
-      baseOption: HttpSetup(
-        receiveTimeout: const Duration(seconds: 30),
-      ),
-    );
-
-
-    auth.userChanges().listen((event) {
+    _authSubscription = auth.userChanges().listen((event) {
       if (event != null && mounted) {
         setState(() {
           user = event;
@@ -72,6 +66,7 @@ class _FormPageState extends State<FormPage> {
 
     super.initState();
   }
+
   TextEditingController descriptionController = TextEditingController();
 
   Future updateYourDay() async {
@@ -86,9 +81,7 @@ class _FormPageState extends State<FormPage> {
         //textScanning = true;
         imageFile = pickedImage;
         //getRecognisedText(pickedImage);
-        setState(() {
-
-        });
+        setState(() {});
       }
     } catch (e) {
       //textScanning = false;
@@ -99,46 +92,63 @@ class _FormPageState extends State<FormPage> {
   }
 
   Future<String> uploadTodaysPics(String key) async {
-    String drugPicUrl = "";
-    final drugUrl = storageRef.child("JackSocialApp/Users/${user.uid}/$key-$title.jpg");
-    UploadTask uploaddrug = drugUrl.putFile(File(imageFile!.path));
-    await uploaddrug.whenComplete(() async => {
-      print("love: ${drugUrl.getDownloadURL()}"),
-      drugPicUrl = await drugUrl.getDownloadURL(),
-    });
-    return drugPicUrl.toString();
+    if (imageFile == null) return "";
+    final file = storageRef.child('JackSocialApp/Users/${user.uid}/$key.jpg');
+    final bytes = await imageFile!.readAsBytes();
+    if (bytes.length >= 5 * 1024 * 1024) {
+      throw StateError('Image must be smaller than 5 MB');
+    }
+    await file.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+    return file.getDownloadURL();
   }
 
-  Future<String> _handleSubmit(String text) async {
-    // Handle ChatGPT request and response
-    final request = ChatCompleteText(
-      messages: [
-        Messages(
-          role: Role.assistant,
-          content: "You are a friend of the user, and the user is trying to ask for your advice, be nice to them and be positive for them to feel like hearing from a real friend. ",
-        ),
-        Messages(
-          role: Role.user,
-          content: text,
-        )
-      ],
-      maxToken: 200,
-      model: GptTurbo0631Model(),
-    );
-    final response = await _openAI.onChatCompletion(request: request);
-    print(response);
-    return response!.choices.first.message!.content.trim().replaceAll('"', '');
+  Future<String> _handleSubmit(String text) => _aiService.reply([
+    {'role': 'user', 'content': text},
+  ], mode: 'journal');
+
+  Future<void> _saveJournal() async {
+    if (!userInteracts()) return;
+    setState(() => isLoading = true);
+    try {
+      final ref = database.child('users/${user.uid}').push();
+      final picURL = await uploadTodaysPics(ref.key!);
+      await ref.set({
+        'date': date.millisecondsSinceEpoch,
+        'title_for_today': title.trim(),
+        'mood_of_the_day': description.trim(),
+        'happiness_level': maxValue,
+        'picURL': picURL,
+        'AI_response': '',
+      });
+      String response = '';
+      try {
+        response = await _handleSubmit(description.trim());
+        await ref.child('AI_response').set(response);
+      } catch (_) {
+        // The journal is already saved: optional AI must never block reflection.
+      }
+      if (!mounted) return;
+      ScaffoldSnackbar.of(context).show(
+        response.isEmpty
+            ? 'Journal saved. AI reflection is unavailable right now.'
+            : 'Journal saved.',
+      );
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldSnackbar.of(
+          context,
+        ).show('Could not save. Your text is still here; please retry.');
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final todayDrugRef = database.child("/users/${user.uid}");
-    final drugListRef = database.child("/users/${user.uid}");
-    var key = database.push().key;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Stories of your day"),
-      ),
+      appBar: AppBar(title: const Text("Stories of your day")),
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -165,7 +175,7 @@ class _FormPageState extends State<FormPage> {
                                 ),
                                 onChanged: (value) {
                                   setState(() {
-                                    title = value;
+                                    setState(() => title = value);
                                   });
                                 },
                               ),
@@ -175,16 +185,16 @@ class _FormPageState extends State<FormPage> {
                                   border: const OutlineInputBorder(),
                                   filled: true,
                                   hintText:
-                                  'Write anything that happened today in 200 words...',
+                                      'Write anything that happened today in 200 words...',
                                   labelText: 'Mood for the day',
                                   counterText:
-                                  "Word count: ${200 - description.length} ",
+                                      "Word count: ${200 - description.length} ",
                                   // counter:
                                   //     Text("${descriptionController.text.length}"),
                                 ),
                                 onChanged: (value) {
                                   setState(() {
-                                    description = value;
+                                    setState(() => description = value);
                                   });
                                 },
                                 maxLines: 5,
@@ -201,99 +211,140 @@ class _FormPageState extends State<FormPage> {
                               Center(
                                 child: SingleChildScrollView(
                                   child: Container(
-                                      margin: const EdgeInsets.all(20),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.center,
-                                        children: [
-                                          //if (textScanning) const CircularProgressIndicator(),
-                                          if (imageFile == null) //!textScanning &&
+                                    margin: const EdgeInsets.all(20),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        //if (textScanning) const CircularProgressIndicator(),
+                                        if (imageFile ==
+                                            null) //!textScanning &&
+                                          Container(
+                                            width: 300,
+                                            height: 300,
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        if (imageFile != null)
+                                          FutureBuilder<Uint8List>(
+                                            future: imageFile!.readAsBytes(),
+                                            builder: (context, snapshot) =>
+                                                snapshot.hasData
+                                                ? Image.memory(snapshot.data!)
+                                                : const SizedBox(height: 80),
+                                          ),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
                                             Container(
-                                              width: 300,
-                                              height: 300,
-                                              color: Colors.grey[300]!,
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 5,
+                                                  ),
+                                              padding: const EdgeInsets.only(
+                                                top: 10,
+                                              ),
+                                              child: ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.white,
+                                                  foregroundColor: Colors.grey,
+                                                  shadowColor: Colors.grey[400],
+                                                  elevation: 10,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8.0,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: () {
+                                                  getImage(ImageSource.gallery);
+                                                },
+                                                child: Container(
+                                                  margin:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 5,
+                                                        horizontal: 5,
+                                                      ),
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.image,
+                                                        size: 30,
+                                                      ),
+                                                      Text(
+                                                        "Gallery",
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color:
+                                                              Colors.grey[600],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
                                             ),
-                                          if (imageFile != null) Image.file(File(imageFile!.path)),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              Container(
-                                                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                                                  padding: const EdgeInsets.only(top: 10),
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.white,
-                                                      foregroundColor: Colors.grey,
-                                                      shadowColor: Colors.grey[400],
-                                                      elevation: 10,
-                                                      shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(8.0)),
-                                                    ),
-                                                    onPressed: () {
-                                                      getImage(ImageSource.gallery);
-                                                    },
-                                                    child: Container(
-                                                      margin: const EdgeInsets.symmetric(
-                                                          vertical: 5, horizontal: 5),
-                                                      child: Column(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.image,
-                                                            size: 30,
-                                                          ),
-                                                          Text(
-                                                            "Gallery",
-                                                            style: TextStyle(
-                                                                fontSize: 13, color: Colors.grey[600]),
-                                                          )
-                                                        ],
+                                            Container(
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 5,
+                                                  ),
+                                              padding: const EdgeInsets.only(
+                                                top: 10,
+                                              ),
+                                              child: ElevatedButton(
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.white,
+                                                  foregroundColor: Colors.grey,
+                                                  shadowColor: Colors.grey[400],
+                                                  elevation: 10,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8.0,
+                                                        ),
+                                                  ),
+                                                ),
+                                                onPressed: () {
+                                                  getImage(ImageSource.camera);
+                                                },
+                                                child: Container(
+                                                  margin:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 5,
+                                                        horizontal: 5,
                                                       ),
-                                                    ),
-                                                  )),
-                                              Container(
-                                                  margin: const EdgeInsets.symmetric(horizontal: 5),
-                                                  padding: const EdgeInsets.only(top: 10),
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Colors.white,
-                                                      foregroundColor: Colors.grey,
-                                                      shadowColor: Colors.grey[400],
-                                                      elevation: 10,
-                                                      shape: RoundedRectangleBorder(
-                                                          borderRadius: BorderRadius.circular(8.0)),
-                                                    ),
-                                                    onPressed: () {
-                                                      getImage(ImageSource.camera);
-                                                    },
-                                                    child: Container(
-                                                      margin: const EdgeInsets.symmetric(
-                                                          vertical: 5, horizontal: 5),
-                                                      child: Column(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.camera_alt,
-                                                            size: 30,
-                                                          ),
-                                                          Text(
-                                                            "Camera",
-                                                            style: TextStyle(
-                                                                fontSize: 13, color: Colors.grey[600]),
-                                                          )
-                                                        ],
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.camera_alt,
+                                                        size: 30,
                                                       ),
-                                                    ),
-                                                  )),
-                                            ],
-                                          ),
-                                          const SizedBox(
-                                            height: 20,
-                                          ),
-                                          const SizedBox(
-                                            height: 20,
-                                          ),
-                                        ],
-                                      )),
+                                                      Text(
+                                                        "Camera",
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color:
+                                                              Colors.grey[600],
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 20),
+                                        const SizedBox(height: 20),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                               Column(
@@ -301,19 +352,25 @@ class _FormPageState extends State<FormPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'Happiness Level',
-                                        style: Theme.of(context).textTheme.bodyLarge,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge,
                                       ),
                                     ],
                                   ),
                                   Text(
                                     intl.NumberFormat.currency(
-                                        symbol: "\$", decimalDigits: 0)
-                                        .format(maxValue),
-                                    style: Theme.of(context).textTheme.titleMedium,
+                                      symbol: "",
+                                      decimalDigits: 0,
+                                    ).format(maxValue),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
                                   ),
                                   Slider(
                                     min: 0,
@@ -329,13 +386,8 @@ class _FormPageState extends State<FormPage> {
                                 ],
                               ),
                             ].expand(
-                                  (widget) => [
-                                widget,
-                                const SizedBox(
-                                  height: 24,
-                                )
-                              ],
-                            )
+                              (widget) => [widget, const SizedBox(height: 24)],
+                            ),
                           ],
                         ),
                       ),
@@ -345,35 +397,7 @@ class _FormPageState extends State<FormPage> {
               ),
             ),
             ElevatedButton(
-              onPressed: !userInteracts() ? null : () async {
-                showDialog(
-                    context: context,
-                    builder: (context) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    });
-                final drugInput = <String, dynamic>{
-                  "date": date.millisecondsSinceEpoch,
-                  "title_for_today": title,
-                  "mood_of_the_day": description,
-                  "happiness_level": maxValue,
-                  "picURL": await uploadTodaysPics(key!),
-                  "AI_response": await _handleSubmit(description),
-                };
-                final drugListInput = <String, dynamic> {
-                  title: true,
-                };
-                todayDrugRef
-                    .child(key)
-                    .set(drugInput)
-                    .then((_) => print('Diary has been posted'))
-                    .catchError((error) => print("You got error on $error"));
-                updateYourDay();
-                if (context.mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              },
+              onPressed: userInteracts() ? _saveJournal : null,
               child: const Text("Update your Diary Now!"),
             ),
           ],
@@ -387,10 +411,7 @@ class _FormDatePicker extends StatefulWidget {
   final DateTime date;
   final ValueChanged<DateTime> onChanged;
 
-  const _FormDatePicker({
-    required this.date,
-    required this.onChanged,
-  });
+  const _FormDatePicker({required this.date, required this.onChanged});
 
   @override
   State<_FormDatePicker> createState() => _FormDatePickerState();
@@ -407,10 +428,7 @@ class _FormDatePickerState extends State<_FormDatePicker> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Text(
-              'Date',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            Text('Date', style: Theme.of(context).textTheme.bodyLarge),
             Text(
               intl.DateFormat.yMd().format(widget.date),
               style: Theme.of(context).textTheme.titleMedium,
@@ -434,7 +452,7 @@ class _FormDatePickerState extends State<_FormDatePicker> {
 
             widget.onChanged(newDate);
           },
-        )
+        ),
       ],
     );
   }
