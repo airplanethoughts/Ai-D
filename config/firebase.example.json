@@ -1,0 +1,11 @@
+{
+  "USE_FIREBASE": true,
+  "FIREBASE_API_KEY": "your-public-firebase-web-api-key",
+  "FIREBASE_APP_ID": "your-firebase-web-app-id",
+  "FIREBASE_PROJECT_ID": "your-project-id",
+  "FIREBASE_MESSAGING_SENDER_ID": "your-sender-id",
+  "FIREBASE_AUTH_DOMAIN": "your-project-id.firebaseapp.com",
+  "FIREBASE_DATABASE_URL": "https://your-database-url-from-firebase-console",
+  "FIREBASE_STORAGE_BUCKET": "your-bucket-from-firebase-console",
+  "FUNCTIONS_REGION": "us-central1"
+}
