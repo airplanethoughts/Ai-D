@@ -1,11 +1,11 @@
 {
-    "name": "jack_social_app_v2",
-    "short_name": "jack_social_app_v2",
+    "name": "Ai-D",
+    "short_name": "Ai-D",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Journals, reflection, and community activities.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
