@@ -11,6 +11,7 @@ import 'users/home_page.dart';
 import 'auth/auth.dart';
 import 'auth/firebase_options.dart';
 import 'demo/demo_app.dart';
+import 'app_theme.dart';
 
 late final FirebaseApp app;
 late final FirebaseAuth auth;
@@ -79,7 +80,7 @@ class AuthExampleApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Ai-D',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+    theme: buildAppTheme(),
     home: StreamBuilder<User?>(
       stream: auth.authStateChanges(),
       builder: (context, snapshot) {
