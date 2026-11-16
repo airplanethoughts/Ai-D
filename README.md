@@ -1,8 +1,22 @@
 # Ai-D
 
-A Flutter app for journaling, personal reflection, and discovering community activities. Built by Guannan Du.
+[![Verify Ai-D](https://github.com/airplanethoughts/Ai-D/actions/workflows/ci.yml/badge.svg)](https://github.com/airplanethoughts/Ai-D/actions/workflows/ci.yml)
 
-**Start with the local demo:** it needs no account, Firebase project, API key, or paid service. Journals are saved on the current browser/device. The connected mode adds Firebase accounts, private cloud journals, administrator-published activities, and optional AI reflection through an authenticated backend.
+**A quiet space to journal, reflect, and connect.** A Flutter project by Guannan Du.
+
+Ai-D brings short journal entries, mood check-ins, reflection prompts, and community activities into one app. Start with the local demo to explore it without signing up or configuring a backend.
+
+**[Open the live app](https://ai-d-live-20261103.web.app)** · [Run locally](#quick-start--runnable-demo) · [Project guide](#source-map)
+
+| Experience | What works | What you need |
+| --- | --- | --- |
+| Local demo | Create, edit, delete and reload journals; mood ratings; prompts that open a journal; sample activity ideas | Flutter, no account or API key |
+| Live free-plan app | Email/password accounts; private text journals; mood tracking; written prompts; published community activities | An account in the live app |
+| Your own connected deployment | Firebase data and accounts, plus optional image uploads and AI reflection | Your own Firebase setup; paid services only if you enable them |
+
+The live free-plan deployment has **no AI responses or photo uploads**. Community activities are administrator-published, not automatically discovered nearby. Mood ratings are personal check-ins, not clinical measurements. The demo's sample ideas are labeled and are not live events.
+
+![Ai-D local demo: reflection prompts](docs/reflection-demo.png)
 
 ## Quick start — runnable demo
 
@@ -107,11 +121,12 @@ flutter build web --no-wasm-dry-run
 flutter build web --no-wasm-dry-run --dart-define-from-file=config/firebase.emulator.json
 npm ci
 npm ci --prefix functions
+npm run test:deploy
 npm test --prefix functions
 npm run test:rules
 ```
 
-The tests cover local journal persistence/edit/delete, chat failure/retry/history, encouragement request lifecycle, AI input validation, quota failure behavior, sanitized provider errors, owner-only journal access, profile privilege escalation, administrator activity writes, and image access rules. GitHub Actions runs these checks with Node 22, Java 21 and the pinned Flutter release.
+The tests cover local journal persistence/edit/delete, preservation of unreadable stored data, prompt-to-journal flow, small-screen layout, journal detail presentation, chat failure/retry/history, encouragement request lifecycle, AI input validation, quota failure behavior, sanitized provider errors, owner-only journal access, profile privilege escalation, administrator activity writes, and image access rules. GitHub Actions runs these checks with Node 22, Java 21 and the pinned Flutter release. The test-tool dependency tree pins gRPC to the patched 1.13.x line. Some moderate advisories remain in transitive Firebase CLI development dependencies; do not treat passing functional checks as a claim of a clean dependency audit.
 
 **Verified target:** Flutter web. Android/iOS scaffolds are retained from the original project, and still require native toolchain/Firebase registration and platform migration checks. Native builds and a real cloud deployment are not claimed as tested.
 
@@ -125,7 +140,7 @@ The tests cover local journal persistence/edit/delete, chat failure/retry/histor
 - `functions/`: authenticated, quota-limited server-side AI integration.
 - `*.rules`, `database.rules.json`, `rules-test/`: backend authorization and emulator tests.
 
-The internal Dart package remains `jack_social_app_v2` to preserve import compatibility. Some unused historical examples remain in the repository; they do not implement nearby-event filtering.
+The internal Dart package remains `jack_social_app_v2` to preserve import compatibility. Some unused historical examples remain in the repository; they do not implement nearby-event filtering. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development and review workflow.
 
 ## Publish the web app with Firebase Hosting
 
