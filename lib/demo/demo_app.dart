@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../app_theme.dart';
 
 class DemoEntry {
   final String id, title, body;
@@ -42,7 +43,7 @@ class DemoApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Ai-D',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+    theme: buildAppTheme(),
     home: const DemoHome(),
   );
 }
@@ -56,6 +57,7 @@ class DemoHome extends StatefulWidget {
 class _DemoHomeState extends State<DemoHome> {
   final List<DemoEntry> _entries = [];
   bool _loading = true;
+  bool _storageReadable = false;
   String? _error;
   int _page = 0;
   @override
@@ -70,11 +72,18 @@ class _DemoHomeState extends State<DemoHome> {
       final raw = prefs.getString('aid-demo-journal-v1');
       final data = raw == null ? [] : jsonDecode(raw);
       if (data is! List) throw const FormatException();
-      final entries = data
-          .map(DemoEntry.fromJson)
-          .whereType<DemoEntry>()
-          .toList();
-      if (mounted) setState(() => _entries.addAll(entries));
+      final entries = data.map(DemoEntry.fromJson).toList();
+      if (entries.any((entry) => entry == null) ||
+          entries.map((entry) => entry!.id).toSet().length != entries.length) {
+        throw const FormatException('Invalid journal data');
+      }
+      if (mounted) {
+        setState(() {
+          _entries.addAll(entries.cast<DemoEntry>());
+          _storageReadable = true;
+          _error = null;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -88,6 +97,7 @@ class _DemoHomeState extends State<DemoHome> {
   }
 
   Future<bool> _persist(List<DemoEntry> entries) async {
+    if (!_storageReadable) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final ok = await prefs.setString(
@@ -107,9 +117,12 @@ class _DemoHomeState extends State<DemoHome> {
     }
   }
 
-  Future<void> _edit([DemoEntry? entry]) async {
+  Future<void> _edit([DemoEntry? entry, String? prompt]) async {
+    if (_loading || !_storageReadable) return;
     final changed = await Navigator.of(context).push<DemoEntry>(
-      MaterialPageRoute(builder: (_) => DemoEditor(entry: entry)),
+      MaterialPageRoute(
+        builder: (_) => DemoEditor(entry: entry, prompt: prompt),
+      ),
     );
     if (changed == null) return;
     final next = [..._entries];
@@ -170,17 +183,35 @@ class _DemoHomeState extends State<DemoHome> {
           ),
         ),
         if (_error != null)
-          Padding(padding: const EdgeInsets.all(12), child: Text(_error!)),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Text(_error!, semanticsLabel: _error),
+                if (!_storageReadable)
+                  TextButton(
+                    onPressed: _load,
+                    child: const Text('Retry reading journals'),
+                  ),
+              ],
+            ),
+          ),
         Expanded(
-          child: _page == 0
-              ? _journals()
-              : _page == 1
-              ? _prompts()
-              : _activities(),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: _page == 0
+                  ? _journals()
+                  : _page == 1
+                  ? _prompts()
+                  : _activities(),
+            ),
+          ),
         ),
       ],
     ),
-    floatingActionButton: _page == 0 && !_loading
+    floatingActionButton: _page == 0 && !_loading && _storageReadable
         ? FloatingActionButton.extended(
             onPressed: () => _edit(),
             icon: const Icon(Icons.add),
@@ -209,11 +240,38 @@ class _DemoHomeState extends State<DemoHome> {
   Widget _journals() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_entries.isEmpty) {
-      return const Center(child: Text('Your first reflection starts here.'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.auto_stories_outlined, size: 48),
+              SizedBox(height: 16),
+              Text(
+                'Your first reflection starts here.',
+                style: TextStyle(fontSize: 24),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'A small moment is enough. Write what happened and how it felt.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
     return ListView(
       padding: const EdgeInsets.only(bottom: 100),
       children: [
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            '${_entries.length} saved ${_entries.length == 1 ? 'reflection' : 'reflections'}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
         for (final e in _entries)
           Card(
             child: ListTile(
@@ -237,24 +295,34 @@ class _DemoHomeState extends State<DemoHome> {
 
   Widget _prompts() => ListView(
     padding: const EdgeInsets.all(20),
-    children: const [
-      Text('Reflection prompts', style: TextStyle(fontSize: 24)),
+    children: [
       Text(
-        'These are written prompts, not AI-generated advice. Connected AI chat is available only after you configure Firebase and the backend.',
+        'A little space to reflect',
+        style: Theme.of(context).textTheme.headlineSmall,
       ),
-      Card(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Text('What took energy today, and what gave some back?'),
-        ),
+      const SizedBox(height: 8),
+      const Text(
+        'Written prompts to help you get started. Choose one to write about it.',
       ),
-      Card(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            'Who helped you feel connected? What small step could you take tomorrow?',
+      const SizedBox(height: 20),
+      for (final prompt in [
+        'What took energy today, and what gave some back?',
+        'Who helped you feel connected? What small step could you take tomorrow?',
+        'What is one moment from today you want to remember?',
+      ])
+        Card(
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(20),
+            title: Text(prompt),
+            trailing: const Icon(Icons.arrow_forward),
+            onTap: _loading || !_storageReadable
+                ? null
+                : () => _edit(null, prompt),
           ),
         ),
+      const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('These are written prompts, not AI-generated advice.'),
       ),
     ],
   );
@@ -281,7 +349,8 @@ class _DemoHomeState extends State<DemoHome> {
 
 class DemoEditor extends StatefulWidget {
   final DemoEntry? entry;
-  const DemoEditor({super.key, this.entry});
+  final String? prompt;
+  const DemoEditor({super.key, this.entry, this.prompt});
   @override
   State<DemoEditor> createState() => _DemoEditorState();
 }
@@ -306,7 +375,15 @@ class _DemoEditorState extends State<DemoEditor> {
       child: Form(
         key: _form,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.prompt != null) ...[
+              Text(
+                widget.prompt!,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 20),
+            ],
             TextFormField(
               controller: _title,
               maxLength: 120,
@@ -330,6 +407,7 @@ class _DemoEditorState extends State<DemoEditor> {
               max: 10,
               divisions: 10,
               label: '${_mood.round()}/10',
+              semanticFormatterCallback: (v) => '${v.round()} out of 10',
               onChanged: (v) => setState(() => _mood = v),
             ),
             FilledButton(
