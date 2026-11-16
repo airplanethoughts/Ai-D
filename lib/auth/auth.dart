@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../demo/demo_app.dart';
 
 class ScaffoldSnackbar {
   final BuildContext _context;
@@ -130,6 +131,11 @@ class _AuthGateState extends State<AuthGate> {
                     _register ? 'Create your Ai-D account' : 'Welcome to Ai-D',
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'A space to journal, reflect, and find connection.',
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _email,
@@ -167,6 +173,15 @@ class _AuthGateState extends State<AuthGate> {
                           ? 'Already have an account?'
                           : 'Create an account',
                     ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const DemoHome()),
+                          ),
+                    icon: const Icon(Icons.auto_stories_outlined),
+                    label: const Text('Try the local demo · no account needed'),
                   ),
                   TextButton(
                     onPressed: _busy ? null : _reset,
