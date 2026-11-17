@@ -20,6 +20,8 @@ flutter test test/free_deployment_test.dart --dart-define=ENABLE_AI=false --dart
 flutter build web --no-wasm-dry-run
 npm ci
 npm ci --prefix functions
+npm audit --audit-level=low
+npm audit --prefix functions --audit-level=low
 npm run test:deploy
 npm test --prefix functions
 npm run test:rules
