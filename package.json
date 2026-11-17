@@ -7,11 +7,16 @@
     "test:deploy": "node --test test-deploy/*.test.cjs"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^4.0.0",
-    "firebase": "^11.0.0",
-    "firebase-tools": "^15.34.2"
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0",
+    "firebase-tools": "^15.36.0"
   },
   "overrides": {
-    "@grpc/grpc-js": "~1.13.6"
+    "@grpc/grpc-js": "~1.13.6",
+    "glob": "14.0.6",
+    "superstatic": "11.1.0",
+    "@opentelemetry/core": "2.8.0",
+    "uuid": "11.1.1",
+    "node-gyp": "11.1.0"
   }
 }

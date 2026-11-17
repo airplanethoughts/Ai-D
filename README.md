@@ -121,12 +121,14 @@ flutter build web --no-wasm-dry-run
 flutter build web --no-wasm-dry-run --dart-define-from-file=config/firebase.emulator.json
 npm ci
 npm ci --prefix functions
+npm audit --audit-level=low
+npm audit --prefix functions --audit-level=low
 npm run test:deploy
 npm test --prefix functions
 npm run test:rules
 ```
 
-The tests cover local journal persistence/edit/delete, preservation of unreadable stored data, prompt-to-journal flow, small-screen layout, journal detail presentation, chat failure/retry/history, encouragement request lifecycle, AI input validation, quota failure behavior, sanitized provider errors, owner-only journal access, profile privilege escalation, administrator activity writes, and image access rules. GitHub Actions runs these checks with Node 22, Java 21 and the pinned Flutter release. The test-tool dependency tree pins gRPC to the patched 1.13.x line. Some moderate advisories remain in transitive Firebase CLI development dependencies; do not treat passing functional checks as a claim of a clean dependency audit.
+The tests cover local journal persistence/edit/delete, preservation of unreadable stored data, prompt-to-journal flow, small-screen layout, journal detail presentation, chat failure/retry/history, encouragement request lifecycle, AI input validation, quota failure behavior, sanitized provider errors, owner-only journal access, profile privilege escalation, administrator activity writes, and image access rules. GitHub Actions runs these checks with Node 22, Java 21 and the pinned Flutter release. Both npm lockfiles were audited on November 17, 2026 with no reported vulnerabilities. CI now checks both trees at every advisory severity. This is a dated dependency-audit result, not a guarantee that future advisories or all security issues are covered.
 
 **Verified target:** Flutter web. Android/iOS scaffolds are retained from the original project, and still require native toolchain/Firebase registration and platform migration checks. Native builds and a real cloud deployment are not claimed as tested.
 
@@ -163,3 +165,11 @@ Use the returned Hosting URL. Enable Email/Password sign-in and add your live do
 Set `ENABLE_AI` and `ENABLE_UPLOADS` to `false` in your local build configuration when those backend services have not been provisioned. Accounts, text journals, mood tracking and written self-reflection prompts still work. The build hides image selection and AI request controls, and the AI service rejects requests without sending them. The example configuration starts with these capabilities off.
 
 Only set the flags to `true` after provisioning Storage and the callable AI backend (including its server-side secret) in your own project. The flags do not enable billing or create those services.
+
+## Dependency maintenance
+
+The optional backend uses Firebase Admin 14 and Functions 7 on **Node 22**, including a test that loads the real callable entry point and constructs its Firestore quota reference without a cloud connection. No paid backend is enabled by these dependency changes.
+
+The tooling keeps the Firebase 11 / rules-testing 4 majors compatible with Node 22. Overrides in the separate development-tool package upgrade Firebase CLI's Glob, Hosting server, OpenTelemetry and UUID dependencies, and Firestore's gRPC transport. The RE2 native build uses Node-gyp 11.1 to avoid its newer unpatched Picomatch dependency chain. These overrides apply to the development-tool dependency tree; the optional backend has its own independent lockfile. They do not suppress audit findings. Hosting asset delivery, route fallback, cache headers, Pub/Sub tracing initialization and all access-rule emulators are covered by tests.
+
+Review the overrides when upgrading the CLI, remove them when upstream includes the fixes, and rerun clean installs, both audits and the full CI workflow. Relevant advisories: [Glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), [OpenTelemetry](https://github.com/advisories/GHSA-8988-4f7v-96qf), [UUID](https://github.com/advisories/GHSA-w5hq-g745-h8pq), [Picomatch](https://github.com/advisories/GHSA-fc5q-39xc-vjpf), and [gRPC](https://github.com/advisories/GHSA-m9gg-hp2v-232j).
