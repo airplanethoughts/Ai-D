@@ -10,5 +10,8 @@
     "@firebase/rules-unit-testing": "^4.0.0",
     "firebase": "^11.0.0",
     "firebase-tools": "^15.34.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "~1.13.6"
   }
 }

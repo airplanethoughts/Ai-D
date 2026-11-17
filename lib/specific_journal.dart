@@ -1,47 +1,56 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-class DayDetailScreen extends StatefulWidget {
+class DayDetailScreen extends StatelessWidget {
   const DayDetailScreen({super.key, required this.info, required this.date});
 
   final Map info;
   final String date;
 
   @override
-  State<DayDetailScreen> createState() => _DayDetailScreenState();
-}
-
-class _DayDetailScreenState extends State<DayDetailScreen> {
-  @override
   Widget build(BuildContext context) {
+    final image = (info['picURL'] ?? '').toString();
+    final reflection = (info['AI_response'] ?? '').toString().trim();
     return Scaffold(
-      appBar: AppBar(title: Text(widget.date)),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+      appBar: AppBar(title: Text(date)),
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: ListView(
+            padding: const EdgeInsets.all(24),
             children: [
-              const SizedBox(height: 20),
-              if ((widget.info['picURL'] ?? '').toString().isNotEmpty)
+              Text(
+                (info['title_for_today'] ?? 'Your reflection').toString(),
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 12),
+              Text('Mood · ${info['happiness_level'] ?? '—'}/10'),
+              const SizedBox(height: 24),
+              if (image.isNotEmpty) ...[
                 Image.network(
-                  widget.info['picURL'],
+                  image,
+                  height: 280,
+                  fit: BoxFit.contain,
                   errorBuilder: (_, _, _) => const Text('Image unavailable'),
                 ),
-              const SizedBox(height: 20),
-              Text(
-                'Title: ${widget.info["title_for_today"]}',
-                style: GoogleFonts.lato(textStyle: TextStyle(fontSize: 25)),
+                const SizedBox(height: 24),
+              ],
+              SelectableText(
+                (info['mood_of_the_day'] ?? '').toString(),
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
-              Text(
-                'Mood of the day: \n ${widget.info["mood_of_the_day"]}',
-                style: GoogleFonts.lato(textStyle: TextStyle(fontSize: 25)),
-              ),
-              const Divider(),
-              Text(
-                'A bit of Advice: \n ${widget.info["AI_response"]}',
-                style: GoogleFonts.lato(textStyle: TextStyle(fontSize: 25)),
-              ),
+              if (reflection.isNotEmpty) ...[
+                const SizedBox(height: 32),
+                const Divider(),
+                Text(
+                  'AI reflection',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                SelectableText(reflection),
+                const SizedBox(height: 12),
+                const Text('A reflection aid, not professional advice.'),
+              ],
             ],
           ),
         ),
